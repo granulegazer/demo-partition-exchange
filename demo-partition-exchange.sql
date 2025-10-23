@@ -17,6 +17,17 @@ EXCEPTION
 END;
 /
 
+BEGIN
+    EXECUTE IMMEDIATE 'DROP TYPE date_array_type';
+EXCEPTION
+    WHEN OTHERS THEN NULL;
+END;
+/
+
+-- Create custom type for date array (Oracle 9i+ compatible)
+CREATE OR REPLACE TYPE date_array_type AS TABLE OF DATE;
+/
+
 -- Create interval partitioned table (daily partitions created automatically)
 CREATE TABLE sales (
     sale_id NUMBER,
@@ -178,7 +189,7 @@ ORDER BY partition_position;
 -- ========================================
 
 CREATE OR REPLACE PROCEDURE archive_partitions_by_dates (
-    p_dates IN SYS.ODCIDATELIST  -- Array of dates to archive
+    p_dates IN date_array_type  -- Custom type for compatibility
 ) AS
     v_partition_name VARCHAR2(128);
     v_partition_date DATE;
@@ -301,7 +312,7 @@ SET SERVEROUTPUT ON SIZE UNLIMITED
 
 -- Scenario 1: Archive specific dates (3 dates)
 DECLARE
-    v_dates SYS.ODCIDATELIST := SYS.ODCIDATELIST(
+    v_dates date_array_type := date_array_type(
         DATE '2024-01-15',
         DATE '2024-01-20',
         DATE '2024-01-25'
@@ -331,7 +342,7 @@ ORDER BY sale_date;
 
 -- Scenario 2: Archive an entire week
 DECLARE
-    v_dates SYS.ODCIDATELIST := SYS.ODCIDATELIST();
+    v_dates date_array_type := date_array_type();
     v_start_date DATE := DATE '2024-02-01';
 BEGIN
     -- Build list of 7 consecutive dates
@@ -347,7 +358,7 @@ END;
 
 -- Scenario 3: Archive first day of each month (Jan-Jun)
 DECLARE
-    v_dates SYS.ODCIDATELIST := SYS.ODCIDATELIST(
+    v_dates date_array_type := date_array_type(
         DATE '2024-01-01',
         DATE '2024-02-01',
         DATE '2024-03-01',
@@ -363,7 +374,7 @@ END;
 
 -- Scenario 4: Archive random dates across multiple months
 DECLARE
-    v_dates SYS.ODCIDATELIST := SYS.ODCIDATELIST(
+    v_dates date_array_type := date_array_type(
         DATE '2024-01-10',
         DATE '2024-02-14',
         DATE '2024-03-17',
@@ -517,8 +528,8 @@ ORDER BY sale_date, data_source;
 CREATE OR REPLACE FUNCTION get_date_list(
     p_start_date DATE,
     p_end_date DATE
-) RETURN SYS.ODCIDATELIST IS
-    v_dates SYS.ODCIDATELIST := SYS.ODCIDATELIST();
+) RETURN date_array_type IS
+    v_dates date_array_type := date_array_type();
     v_current_date DATE := p_start_date;
 BEGIN
     WHILE v_current_date <= p_end_date LOOP
@@ -532,7 +543,7 @@ END;
 
 -- Example: Archive entire January 2024 using helper
 DECLARE
-    v_dates SYS.ODCIDATELIST;
+    v_dates date_array_type;
 BEGIN
     v_dates := get_date_list(DATE '2024-01-01', DATE '2024-01-31');
     archive_partitions_by_dates(v_dates);
@@ -548,6 +559,7 @@ DROP TABLE sales PURGE;
 DROP TABLE sales_archive PURGE;
 DROP PROCEDURE archive_partitions_by_dates;
 DROP FUNCTION get_date_list;
+DROP TYPE date_array_type;
 DROP VIEW sales_complete;
 */
 
@@ -577,7 +589,7 @@ PART 3: ARCHIVE BY DATES
   
 CALL EXAMPLES:
 -- Archive 3 specific dates
-EXEC archive_partitions_by_dates(SYS.ODCIDATELIST(DATE '2024-01-15', DATE '2024-01-20', DATE '2024-01-25'));
+EXEC archive_partitions_by_dates(date_array_type(DATE '2024-01-15', DATE '2024-01-20', DATE '2024-01-25'));
 
 -- Archive date range using helper
 EXEC archive_partitions_by_dates(get_date_list(DATE '2024-02-01', DATE '2024-02-07'));
