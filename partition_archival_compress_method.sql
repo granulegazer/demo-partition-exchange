@@ -2,7 +2,7 @@
 -- PARTITION ARCHIVAL - COMPLETE SOLUTION
 -- ============================================
 
--- SCENARIO: Main table with monthly partitions, archive partitions older than 12 months
+-- SCENARIO: Main table with daily partitions, archive partitions older than 12 months
 
 -- ============================================
 -- STEP 1: CREATE MAIN PARTITIONED TABLE
@@ -170,7 +170,6 @@ BEGIN
         -- when we do the exchange in step 5
         v_archive_partition := v_partition_name;
         DBMS_OUTPUT.PUT_LINE('4. Will use auto-created archive partition: ' || v_archive_partition);
-        END;
         
         -- Step 5: Exchange staging to archive partition (INSTANT)
         EXECUTE IMMEDIATE 'ALTER TABLE ' || p_archive_table ||
