@@ -43,8 +43,7 @@ INTERVAL (NUMTODSINTERVAL(1, 'DAY'))  -- Auto-create partition per day
 (
     PARTITION p_archive_initial VALUES LESS THAN (DATE '2023-01-01')
 )
-COMPRESS FOR ARCHIVE HIGH;  -- Use compression for archive
--- For free option: COMPRESS BASIC
+COMPRESS BASIC;  -- Using basic compression (available in all editions)
 
 -- Create matching indexes
 CREATE INDEX idx_sales_archive_date ON sales_archive(sale_date) LOCAL;
@@ -183,7 +182,7 @@ BEGIN
             DBMS_OUTPUT.PUT_LINE('6. Compressing archive partition...');
             EXECUTE IMMEDIATE 'ALTER TABLE ' || p_archive_table ||
                              ' MOVE PARTITION ' || v_archive_partition ||
-                             ' COMPRESS FOR ARCHIVE HIGH';
+                             ' COMPRESS BASIC';
             DBMS_OUTPUT.PUT_LINE('   Compression complete');
         END IF;
         
