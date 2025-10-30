@@ -15,13 +15,10 @@ CREATE TABLE sales_main (
     product_id NUMBER,
     CONSTRAINT pk_sales PRIMARY KEY (sale_id, sale_date)
 )
-PARTITION BY RANGE (sale_date) (
-    PARTITION p_202301 VALUES LESS THAN (DATE '2023-02-01'),
-    PARTITION p_202302 VALUES LESS THAN (DATE '2023-03-01'),
-    PARTITION p_202303 VALUES LESS THAN (DATE '2023-04-01'),
-    -- ... more partitions ...
-    PARTITION p_202410 VALUES LESS THAN (DATE '2024-11-01'),
-    PARTITION p_202411 VALUES LESS THAN (DATE '2024-12-01')
+PARTITION BY RANGE (sale_date)
+INTERVAL (NUMTODSINTERVAL(1, 'DAY'))  -- Auto-create partition per day
+(
+    PARTITION p_initial VALUES LESS THAN (DATE '2023-01-01')
 )
 NOCOMPRESS;
 
@@ -41,8 +38,10 @@ CREATE TABLE sales_archive (
     product_id NUMBER,
     CONSTRAINT pk_sales_archive PRIMARY KEY (sale_id, sale_date)
 )
-PARTITION BY RANGE (sale_date) (
-    PARTITION p_archive_default VALUES LESS THAN (MAXVALUE)
+PARTITION BY RANGE (sale_date)
+INTERVAL (NUMTODSINTERVAL(1, 'DAY'))  -- Auto-create partition per day
+(
+    PARTITION p_archive_initial VALUES LESS THAN (DATE '2023-01-01')
 )
 COMPRESS FOR ARCHIVE HIGH;  -- Use compression for archive
 -- For free option: COMPRESS BASIC
@@ -166,21 +165,11 @@ BEGIN
         EXECUTE IMMEDIATE 'SELECT COUNT(*) FROM ' || p_staging_table INTO v_rowcount;
         DBMS_OUTPUT.PUT_LINE('3. Rows in staging: ' || v_rowcount);
         
-        -- Step 4: Add partition to archive table if it doesn't exist
-        v_archive_partition := 'p_arch_' || v_partition_name;
-        
-        BEGIN
-            -- Try to add partition to archive table
-            EXECUTE IMMEDIATE 'ALTER TABLE ' || p_archive_table ||
-                             ' SPLIT PARTITION p_archive_default AT (DATE ''' ||
-                             TO_CHAR(ADD_MONTHS(TO_DATE(SUBSTR(v_partition_name, 3), 'YYYYMM'), 1), 'YYYY-MM-DD') ||
-                             ''') INTO (PARTITION ' || v_archive_partition || 
-                             ', PARTITION p_archive_default)';
-            DBMS_OUTPUT.PUT_LINE('4. Archive partition created: ' || v_archive_partition);
-        EXCEPTION
-            WHEN OTHERS THEN
-                -- Partition might already exist, continue
-                DBMS_OUTPUT.PUT_LINE('4. Archive partition exists or error: ' || SQLERRM);
+        -- Step 4: Exchange directly with auto-created archive partition
+        -- Note: With interval partitioning, the partition will be auto-created
+        -- when we do the exchange in step 5
+        v_archive_partition := v_partition_name;
+        DBMS_OUTPUT.PUT_LINE('4. Will use auto-created archive partition: ' || v_archive_partition);
         END;
         
         -- Step 5: Exchange staging to archive partition (INSTANT)
