@@ -235,22 +235,28 @@ BEGIN
                          ' INCLUDING INDEXES WITHOUT VALIDATION';
         DBMS_OUTPUT.PUT_LINE('2. Partition exchanged to staging (instant)');
         
-        -- Step 3: Get row count
+        -- Step 3: Get row count before archive
         EXECUTE IMMEDIATE 'SELECT COUNT(*) FROM ' || p_staging_table INTO v_rowcount;
-        DBMS_OUTPUT.PUT_LINE('3. Rows in staging: ' || v_rowcount);
+        DBMS_OUTPUT.PUT_LINE('3. Rows to archive: ' || v_rowcount);
         
-        -- Step 4: Exchange directly with auto-created archive partition
+        -- Step 4: Exchange with archive partition
         -- Note: With interval partitioning, the partition will be auto-created
-        -- when we do the exchange in step 5
+        -- The partition in archive will have the same name as source
         v_archive_partition := v_partition_name;
-        DBMS_OUTPUT.PUT_LINE('4. Will use auto-created archive partition: ' || v_archive_partition);
+        DBMS_OUTPUT.PUT_LINE('4. Exchanging with archive partition: ' || v_archive_partition);
         
         -- Step 5: Exchange staging to archive partition (INSTANT)
+        -- The partition will be auto-created in archive table due to interval partitioning
         EXECUTE IMMEDIATE 'ALTER TABLE ' || p_archive_table ||
                          ' EXCHANGE PARTITION ' || v_archive_partition ||
                          ' WITH TABLE ' || p_staging_table ||
                          ' INCLUDING INDEXES WITHOUT VALIDATION';
         DBMS_OUTPUT.PUT_LINE('5. Data exchanged to archive partition (instant)');
+        
+        -- Verify archive count matches
+        EXECUTE IMMEDIATE 'SELECT COUNT(*) FROM ' || p_archive_table || 
+                         ' PARTITION (' || v_archive_partition || ')' INTO v_rowcount;
+        DBMS_OUTPUT.PUT_LINE('   Verified ' || v_rowcount || ' rows in archive partition');
         
         -- Step 6: Compress the archive partition (THIS TAKES TIME)
         IF p_compress THEN
@@ -349,18 +355,18 @@ FROM sales_unified
 GROUP BY data_source;
 
 -- ============================================
--- OPTIONAL: SCHEDULE MONTHLY ARCHIVAL
+-- EXAMPLE PROCEDURE CALL
 -- ============================================
--- Create a monthly job to automatically archive old partitions
+/*
+-- Archive partitions older than 12 months
 BEGIN
-    DBMS_SCHEDULER.CREATE_JOB(
-        job_name => 'MONTHLY_PARTITION_ARCHIVE',
-        job_type => 'PLSQL_BLOCK',
-        job_action => 'BEGIN archive_old_partitions(''SALES_MAIN'', ''SALES_ARCHIVE'', ''SALES_STAGING'', 12, TRUE); END;',
-        start_date => TRUNC(ADD_MONTHS(SYSDATE, 1), 'MM') + 1/24, -- 1st of next month at 1 AM
-        repeat_interval => 'FREQ=MONTHLY; BYMONTHDAY=1; BYHOUR=1',
-        enabled => TRUE,
-        comments => 'Archive partitions older than 12 months'
+    archive_old_partitions(
+        p_main_table => 'SALES_MAIN',
+        p_archive_table => 'SALES_ARCHIVE',
+        p_staging_table => 'SALES_STAGING',
+        p_months_to_keep => 12,
+        p_compress => TRUE
     );
 END;
 /
+*/
