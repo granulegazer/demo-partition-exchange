@@ -68,7 +68,82 @@ CREATE INDEX idx_sales_staging_date ON sales_staging(sale_date);
 CREATE INDEX idx_sales_staging_customer ON sales_staging(customer_id);
 
 -- ============================================
--- STEP 4: ARCHIVE PROCEDURE - THE EFFECTIVE APPROACH
+-- STEP 4: POPULATE TEST DATA
+-- ============================================
+-- Generate data for 180 days with 10-15 records per day
+DECLARE
+    v_sale_id NUMBER := 1;
+    v_records_per_day NUMBER;
+    v_start_date DATE := DATE '2023-01-01';  -- Start from initial partition
+    v_days NUMBER := 720;  -- 2 years of data
+    v_regions SYS.ODCIVARCHAR2LIST := SYS.ODCIVARCHAR2LIST('North', 'South', 'East', 'West', 'Central');
+    v_statuses SYS.ODCIVARCHAR2LIST := SYS.ODCIVARCHAR2LIST('Completed', 'Pending', 'Shipped', 'Delivered');
+BEGIN
+    DBMS_OUTPUT.PUT_LINE('Starting data generation for ' || v_days || ' days...');
+    
+    -- Loop through each day
+    FOR day_offset IN 0..v_days-1 LOOP
+        -- Random 10-15 records per day
+        v_records_per_day := TRUNC(DBMS_RANDOM.VALUE(10, 16));
+        
+        -- Insert records for this day
+        FOR rec IN 1..v_records_per_day LOOP
+            INSERT INTO sales_main VALUES (
+                v_sale_id,
+                v_start_date + day_offset,
+                TRUNC(DBMS_RANDOM.VALUE(1000, 5000)),  -- customer_id
+                TRUNC(DBMS_RANDOM.VALUE(100, 999)),    -- product_id
+                ROUND(DBMS_RANDOM.VALUE(50, 5000), 2)  -- amount
+            );
+            
+            v_sale_id := v_sale_id + 1;
+        END LOOP;
+        
+        -- Commit every 30 days
+        IF MOD(day_offset, 30) = 0 THEN
+            COMMIT;
+            DBMS_OUTPUT.PUT_LINE('Committed data for day ' || TO_CHAR(v_start_date + day_offset, 'YYYY-MM-DD'));
+        END IF;
+    END LOOP;
+    
+    COMMIT;
+    DBMS_OUTPUT.PUT_LINE('Data generation completed!');
+    DBMS_OUTPUT.PUT_LINE('Total records inserted: ' || (v_sale_id - 1));
+END;
+/
+
+-- Gather statistics
+EXEC DBMS_STATS.GATHER_TABLE_STATS(USER, 'SALES_MAIN');
+
+-- Verify data distribution
+SELECT 
+    TO_CHAR(sale_date, 'YYYY-MM') AS month,
+    COUNT(*) AS total_records,
+    COUNT(DISTINCT sale_date) AS days_with_data,
+    ROUND(AVG(daily_count), 2) AS avg_records_per_day,
+    MIN(daily_count) AS min_records_per_day,
+    MAX(daily_count) AS max_records_per_day
+FROM (
+    SELECT sale_date, COUNT(*) AS daily_count
+    FROM sales_main
+    GROUP BY sale_date
+)
+GROUP BY TO_CHAR(sale_date, 'YYYY-MM')
+ORDER BY month;
+
+-- Check partition details (first 10)
+SELECT 
+    partition_name,
+    partition_position,
+    high_value,
+    num_rows
+FROM user_tab_partitions
+WHERE table_name = 'SALES_MAIN'
+  AND ROWNUM <= 10
+ORDER BY partition_position;
+
+-- ============================================
+-- STEP 5: ARCHIVE PROCEDURE - THE EFFECTIVE APPROACH
 -- ============================================
 CREATE OR REPLACE PROCEDURE archive_old_partitions(
     p_main_table VARCHAR2,
