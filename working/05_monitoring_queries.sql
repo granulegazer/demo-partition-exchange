@@ -55,15 +55,13 @@ FROM sales_archive
 GROUP BY TO_CHAR(sale_date, 'YYYY-MM')
 ORDER BY month, active_records DESC;
 
--- View archived data by archive date
+-- View archived data summary
 SELECT 
-    TO_CHAR(archive_date, 'YYYY-MM-DD HH24:MI:SS') AS when_archived,
-    archived_by,
-    COUNT(*) AS records_archived,
-    COUNT(DISTINCT sale_date) AS dates_archived
+    TO_CHAR(sale_date, 'YYYY-MM-DD') AS archived_date,
+    COUNT(*) AS records_archived
 FROM sales_archive
-GROUP BY TO_CHAR(archive_date, 'YYYY-MM-DD HH24:MI:SS'), archived_by
-ORDER BY when_archived DESC;
+GROUP BY sale_date
+ORDER BY sale_date;
 
 -- Check specific dates status (active or archived)
 WITH date_list AS (

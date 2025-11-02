@@ -60,21 +60,20 @@ BEGIN
                 EXECUTE IMMEDIATE 'CREATE INDEX idx_staging_customer ON sales_staging_temp(customer_id)';
                 EXECUTE IMMEDIATE 'CREATE INDEX idx_staging_region ON sales_staging_temp(region)';
                 
-                -- Exchange partition with staging table
+                -- Step 1: Exchange partition from main to staging (instant)
                 v_sql := 'ALTER TABLE sales EXCHANGE PARTITION ' || rec.partition_name || 
                          ' WITH TABLE sales_staging_temp INCLUDING INDEXES WITHOUT VALIDATION';
                 EXECUTE IMMEDIATE v_sql;
+                DBMS_OUTPUT.PUT_LINE('Partition moved to staging table (instant)');
                 
-                -- Exchange staging with archive partition
-                -- The partition will be auto-created in archive table
+                -- Step 2: Exchange staging with archive partition (instant)
+                -- Note: Archive partition will be auto-created due to interval partitioning
                 v_sql := 'ALTER TABLE sales_archive EXCHANGE PARTITION ' || rec.partition_name ||
                          ' WITH TABLE sales_staging_temp INCLUDING INDEXES WITHOUT VALIDATION';
                 EXECUTE IMMEDIATE v_sql;
+                DBMS_OUTPUT.PUT_LINE('Data moved to archive (instant)');
                 
                 v_total_archived := v_total_archived + v_count;
-                COMMIT;
-                
-                DBMS_OUTPUT.PUT_LINE('Archived ' || v_count || ' records');
                 
                 -- Drop staging table
                 EXECUTE IMMEDIATE 'DROP TABLE sales_staging_temp';

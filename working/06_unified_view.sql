@@ -7,17 +7,13 @@ CREATE OR REPLACE VIEW sales_complete AS
 SELECT 
     sale_id, sale_date, customer_id, product_id,
     amount, quantity, region, status,
-    'ACTIVE' AS data_source,
-    CAST(NULL AS DATE) AS archive_date,
-    CAST(NULL AS VARCHAR2(50)) AS archived_by
+    'ACTIVE' AS data_source
 FROM sales
 UNION ALL
 SELECT 
     sale_id, sale_date, customer_id, product_id,
     amount, quantity, region, status,
-    'ARCHIVED' AS data_source,
-    archive_date,
-    archived_by
+    'ARCHIVED' AS data_source
 FROM sales_archive;
 
 -- Example queries using unified view:

@@ -18,6 +18,13 @@ END;
 /
 
 BEGIN
+    EXECUTE IMMEDIATE 'DROP TABLE sales_staging_template PURGE';
+EXCEPTION
+    WHEN OTHERS THEN NULL;
+END;
+/
+
+BEGIN
     EXECUTE IMMEDIATE 'DROP TYPE date_array_type';
 EXCEPTION
     WHEN OTHERS THEN NULL;
@@ -51,20 +58,29 @@ CREATE INDEX idx_sales_date ON sales(sale_date) LOCAL;
 CREATE INDEX idx_sales_customer ON sales(customer_id) LOCAL;
 CREATE INDEX idx_sales_region ON sales(region) LOCAL;
 
--- Create archive table with compression
-CREATE TABLE sales_archive 
+-- Create archive table using CTAS for exchange compatibility
+CREATE TABLE sales_archive
+PARTITION BY RANGE (sale_date)
+INTERVAL (NUMTODSINTERVAL(1, 'DAY'))
+(
+    PARTITION p_archive_initial VALUES LESS THAN (DATE '2024-01-01')
+)
 COMPRESS BASIC  -- Using basic compression available in all editions
-AS SELECT 
-    s.*,
-    SYSDATE AS archive_date,
-    USER AS archived_by
-FROM sales s
-WHERE 1=0;
+AS 
+SELECT * FROM sales WHERE 1=0;
 
--- Create indexes on archive
-CREATE INDEX idx_archive_date ON sales_archive(sale_date);
-CREATE INDEX idx_archive_customer ON sales_archive(customer_id);
-CREATE INDEX idx_archive_archdate ON sales_archive(archive_date);
+-- Create local indexes on archive matching the source table
+CREATE INDEX idx_archive_date ON sales_archive(sale_date) LOCAL;
+CREATE INDEX idx_archive_customer ON sales_archive(customer_id) LOCAL;
+CREATE INDEX idx_archive_region ON sales_archive(region) LOCAL;
+
+-- Create staging table template for exchange operations
+CREATE TABLE sales_staging_template
+AS SELECT * FROM sales WHERE 1=0;
+
+-- Add primary key constraint to archive table (must be done after CTAS)
+ALTER TABLE sales_archive 
+ADD CONSTRAINT pk_sales_archive PRIMARY KEY (sale_id, sale_date);
 
 -- Verify table creation
 SELECT 'Sales table created with interval partitioning' AS status FROM dual;
