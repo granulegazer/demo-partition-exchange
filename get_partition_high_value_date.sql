@@ -90,3 +90,20 @@ END show_partition_dates;
 -- FROM (
 --     -- You'd need to use a pipelined function or similar to convert LONG to VARCHAR2
 -- );
+
+-- ========================================
+-- ROLLBACK SCRIPTS
+-- ========================================
+/*
+-- Step 1: Drop objects in correct dependency order
+DROP PROCEDURE show_partition_dates;
+DROP FUNCTION convert_high_value_to_date;
+
+-- Step 2: Verify objects are dropped
+SELECT object_name, object_type 
+FROM user_objects 
+WHERE object_name IN (
+    'SHOW_PARTITION_DATES',
+    'CONVERT_HIGH_VALUE_TO_DATE'
+);
+*/

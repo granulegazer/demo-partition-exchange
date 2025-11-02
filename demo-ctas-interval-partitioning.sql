@@ -166,10 +166,62 @@ Key Points about CTAS with Interval Partitioning:
 */
 
 -- ========================================
--- CLEANUP
+-- ROLLBACK SCRIPTS
 -- ========================================
 /*
+-- Step 1: Drop all tables created by this script
 DROP TABLE source_orders PURGE;
 DROP TABLE part_orders_daily PURGE;
 DROP TABLE part_orders_monthly PURGE;
+
+-- Step 2: Verify all objects are dropped
+SELECT object_name, object_type 
+FROM user_objects 
+WHERE object_name IN (
+    'SOURCE_ORDERS',
+    'PART_ORDERS_DAILY',
+    'PART_ORDERS_MONTHLY'
+);
+
+-- Note: The PURGE option is used to completely remove the tables
+-- without placing them in the recycle bin, ensuring a clean rollback.
+-- Remove PURGE if you want the option to flashback the tables.
+*/
+
+-- ========================================
+-- SELECTIVE CLEANUP SCRIPTS
+-- ========================================
+/*
+-- Reset source table data only
+TRUNCATE TABLE source_orders;
+
+-- Remove specific partition from daily partitioned table
+-- Replace partition_name with actual partition name
+ALTER TABLE part_orders_daily DROP PARTITION partition_name;
+
+-- Remove specific partition from monthly partitioned table
+-- Replace partition_name with actual partition name
+ALTER TABLE part_orders_monthly DROP PARTITION partition_name;
+
+-- Rebuild indexes if needed
+ALTER INDEX idx_daily_date REBUILD;
+ALTER INDEX idx_monthly_date REBUILD;
+
+-- Regather statistics after major changes
+BEGIN
+    DBMS_STATS.GATHER_TABLE_STATS(
+        ownname => USER,
+        tabname => 'PART_ORDERS_DAILY',
+        estimate_percent => DBMS_STATS.AUTO_SAMPLE_SIZE,
+        cascade => TRUE
+    );
+    
+    DBMS_STATS.GATHER_TABLE_STATS(
+        ownname => USER,
+        tabname => 'PART_ORDERS_MONTHLY',
+        estimate_percent => DBMS_STATS.AUTO_SAMPLE_SIZE,
+        cascade => TRUE
+    );
+END;
+/
 */

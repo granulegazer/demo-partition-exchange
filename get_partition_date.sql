@@ -25,3 +25,16 @@ EXCEPTION
         RETURN NULL;
 END;
 /
+
+-- ========================================
+-- ROLLBACK SCRIPTS
+-- ========================================
+/*
+-- Step 1: Drop the function
+DROP FUNCTION get_partition_date;
+
+-- Step 2: Verify function is dropped
+SELECT object_name, object_type 
+FROM user_objects 
+WHERE object_name = 'GET_PARTITION_DATE';
+*/

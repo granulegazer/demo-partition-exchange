@@ -289,9 +289,10 @@ UNION ALL
 SELECT 'EXCH_JAN17', COUNT(*) FROM exch_jan17;
 
 -- ========================================
--- CLEANUP
+-- ROLLBACK SCRIPTS
 -- ========================================
 /*
+-- Step 1: Drop all tables created by this script
 DROP TABLE source_table PURGE;
 DROP TABLE ctas_basic PURGE;
 DROP TABLE ctas_empty PURGE;
@@ -300,6 +301,59 @@ DROP TABLE part_orders PURGE;
 DROP TABLE exch_jan15 PURGE;
 DROP TABLE exch_jan16 PURGE;
 DROP TABLE exch_jan17 PURGE;
+
+-- Step 2: Verify all objects are dropped
+SELECT object_name, object_type 
+FROM user_objects 
+WHERE object_name IN (
+    'SOURCE_TABLE',
+    'CTAS_BASIC',
+    'CTAS_EMPTY',
+    'CTAS_FULL',
+    'PART_ORDERS',
+    'EXCH_JAN15',
+    'EXCH_JAN16',
+    'EXCH_JAN17'
+);
+
+-- Note: The PURGE option is used to completely remove the tables
+-- without placing them in the recycle bin, ensuring a clean rollback.
+-- Remove PURGE if you want the option to flashback the tables.
+*/
+
+-- ========================================
+-- SELECTIVE CLEANUP SCRIPTS
+-- ========================================
+/*
+-- Reset source table data only
+TRUNCATE TABLE source_table;
+
+-- Remove specific partition from partitioned table
+-- Replace partition_name with actual partition name
+ALTER TABLE part_orders DROP PARTITION partition_name;
+
+-- Rebuild indexes if needed
+ALTER INDEX idx_source_date REBUILD;
+ALTER INDEX idx_source_status REBUILD;
+ALTER INDEX idx_part_orders_date REBUILD;
+
+-- Regather statistics after major changes
+BEGIN
+    DBMS_STATS.GATHER_TABLE_STATS(
+        ownname => USER,
+        tabname => 'SOURCE_TABLE',
+        estimate_percent => DBMS_STATS.AUTO_SAMPLE_SIZE,
+        cascade => TRUE
+    );
+    
+    DBMS_STATS.GATHER_TABLE_STATS(
+        ownname => USER,
+        tabname => 'PART_ORDERS',
+        estimate_percent => DBMS_STATS.AUTO_SAMPLE_SIZE,
+        cascade => TRUE
+    );
+END;
+/
 */
 
 -- ========================================

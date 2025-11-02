@@ -370,3 +370,81 @@ BEGIN
 END;
 /
 */
+
+-- ============================================
+-- ROLLBACK SCRIPTS
+-- ============================================
+/*
+-- Step 1: Drop the view
+DROP VIEW sales_unified;
+
+-- Step 2: Drop the procedure
+DROP PROCEDURE archive_old_partitions;
+
+-- Step 3: Drop the staging table and its indexes
+DROP TABLE sales_staging PURGE;
+
+-- Step 4: Drop the archive table and its indexes
+DROP TABLE sales_archive PURGE;
+
+-- Step 5: Drop the main table and its indexes
+DROP TABLE sales_main PURGE;
+
+-- Step 6: Verify all objects are dropped
+SELECT object_name, object_type 
+FROM user_objects 
+WHERE object_name IN (
+    'SALES_MAIN',
+    'SALES_ARCHIVE',
+    'SALES_STAGING',
+    'SALES_UNIFIED',
+    'ARCHIVE_OLD_PARTITIONS'
+);
+
+-- Note: The PURGE option is used to completely remove the tables
+-- without placing them in the recycle bin, ensuring a clean rollback.
+-- Remove PURGE if you want the option to flashback the tables.
+*/
+
+-- ============================================
+-- SELECTIVE CLEANUP SCRIPTS
+-- ============================================
+/*
+-- Reset staging table (keep structure, remove data)
+TRUNCATE TABLE sales_staging;
+
+-- Remove specific partition from main table
+-- Replace partition_name with actual partition name
+ALTER TABLE sales_main DROP PARTITION partition_name;
+
+-- Remove specific partition from archive table
+-- Replace partition_name with actual partition name
+ALTER TABLE sales_archive DROP PARTITION partition_name;
+
+-- Reset archive table (keep structure, remove data)
+TRUNCATE TABLE sales_archive;
+
+-- Rebuild indexes if needed
+ALTER INDEX idx_sales_date REBUILD;
+ALTER INDEX idx_sales_customer REBUILD;
+ALTER INDEX idx_sales_archive_date REBUILD;
+ALTER INDEX idx_sales_archive_customer REBUILD;
+
+-- Regather statistics after major changes
+BEGIN
+    DBMS_STATS.GATHER_TABLE_STATS(
+        ownname => USER,
+        tabname => 'SALES_MAIN',
+        estimate_percent => DBMS_STATS.AUTO_SAMPLE_SIZE,
+        cascade => TRUE
+    );
+    
+    DBMS_STATS.GATHER_TABLE_STATS(
+        ownname => USER,
+        tabname => 'SALES_ARCHIVE',
+        estimate_percent => DBMS_STATS.AUTO_SAMPLE_SIZE,
+        cascade => TRUE
+    );
+END;
+/
+*/

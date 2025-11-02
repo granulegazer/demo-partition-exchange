@@ -153,11 +153,60 @@ Key Points about CTAS from Partitioned Tables:
 */
 
 -- ========================================
--- CLEANUP
+-- ROLLBACK SCRIPTS
 -- ========================================
 /*
+-- Step 1: Drop all tables created by this script
 DROP TABLE source_orders PURGE;
 DROP TABLE target_orders PURGE;
 DROP TABLE target_orders_subset PURGE;
 DROP TABLE target_orders_oneday PURGE;
+
+-- Step 2: Verify all objects are dropped
+SELECT object_name, object_type 
+FROM user_objects 
+WHERE object_name IN (
+    'SOURCE_ORDERS',
+    'TARGET_ORDERS',
+    'TARGET_ORDERS_SUBSET',
+    'TARGET_ORDERS_ONEDAY'
+);
+
+-- Note: The PURGE option is used to completely remove the tables
+-- without placing them in the recycle bin, ensuring a clean rollback.
+-- Remove PURGE if you want the option to flashback the tables.
+*/
+
+-- ========================================
+-- SELECTIVE CLEANUP SCRIPTS
+-- ========================================
+/*
+-- Reset source table data only
+TRUNCATE TABLE source_orders;
+
+-- Remove specific partition from source table
+-- Replace partition_name with actual partition name
+ALTER TABLE source_orders DROP PARTITION partition_name;
+
+-- Rebuild indexes if needed
+ALTER INDEX idx_source_date REBUILD;
+ALTER INDEX idx_target_date REBUILD;
+
+-- Regather statistics after major changes
+BEGIN
+    DBMS_STATS.GATHER_TABLE_STATS(
+        ownname => USER,
+        tabname => 'SOURCE_ORDERS',
+        estimate_percent => DBMS_STATS.AUTO_SAMPLE_SIZE,
+        cascade => TRUE
+    );
+    
+    DBMS_STATS.GATHER_TABLE_STATS(
+        ownname => USER,
+        tabname => 'TARGET_ORDERS',
+        estimate_percent => DBMS_STATS.AUTO_SAMPLE_SIZE,
+        cascade => TRUE
+    );
+END;
+/
 */
