@@ -36,12 +36,12 @@ PROMPT ===========================================
 
 SELECT 
     '&v_source_table' AS table_name,
-    f_defrag_get_table_size_stats_util('&v_source_table') AS table_stats
+    f_degrag_get_table_size_stats_util('&v_source_table') AS table_stats
 FROM dual
 UNION ALL
 SELECT 
     '&v_archive_table' AS table_name,
-    f_defrag_get_table_size_stats_util('&v_archive_table') AS table_stats
+    f_degrag_get_table_size_stats_util('&v_archive_table') AS table_stats
 FROM dual;
 
 PROMPT
@@ -244,12 +244,12 @@ PROMPT ===========================================
 
 SELECT 
     '&v_source_table' AS table_name,
-    f_defrag_get_table_size_stats_util('&v_source_table') AS table_stats
+    f_degrag_get_table_size_stats_util('&v_source_table') AS table_stats
 FROM dual
 UNION ALL
 SELECT 
     '&v_archive_table' AS table_name,
-    f_defrag_get_table_size_stats_util('&v_archive_table') AS table_stats
+    f_degrag_get_table_size_stats_util('&v_archive_table') AS table_stats
 FROM dual;
 
 PROMPT ===========================================

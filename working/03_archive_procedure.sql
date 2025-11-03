@@ -63,13 +63,13 @@ BEGIN
     v_step := 1;
     
     -- Get initial table stats
-    v_stats := f_defrag_get_table_size_stats_util(p_table_name);
+    v_stats := f_degrag_get_table_size_stats_util(p_table_name);
     prc_log_error_autonomous(v_proc_name, 'I', v_step, NULL, NULL, 
         'Starting partition archiving', 'Table: ' || p_table_name || ', Dates: ' || p_dates.COUNT, USER);
     prc_log_error_autonomous(v_proc_name, 'I', v_step, NULL, NULL, 
         'Source table stats (before)', v_stats, USER);
     
-    v_stats := f_defrag_get_table_size_stats_util(p_table_name || '_ARCHIVE');
+    v_stats := f_degrag_get_table_size_stats_util(p_table_name || '_ARCHIVE');
     prc_log_error_autonomous(v_proc_name, 'I', v_step, NULL, NULL, 
         'Archive table stats (before)', v_stats, USER);
     
@@ -77,8 +77,8 @@ BEGIN
     DBMS_OUTPUT.PUT_LINE('Starting partition archiving');
     DBMS_OUTPUT.PUT_LINE('Table: ' || p_table_name);
     DBMS_OUTPUT.PUT_LINE('Dates to archive: ' || p_dates.COUNT);
-    DBMS_OUTPUT.PUT_LINE('Source stats: ' || f_defrag_get_table_size_stats_util(p_table_name));
-    DBMS_OUTPUT.PUT_LINE('Archive stats: ' || f_defrag_get_table_size_stats_util(p_table_name || '_ARCHIVE'));
+    DBMS_OUTPUT.PUT_LINE('Source stats: ' || f_degrag_get_table_size_stats_util(p_table_name));
+    DBMS_OUTPUT.PUT_LINE('Archive stats: ' || f_degrag_get_table_size_stats_util(p_table_name || '_ARCHIVE'));
     DBMS_OUTPUT.PUT_LINE('===========================================');
     
     -- Show dates to be archived
@@ -244,13 +244,13 @@ BEGIN
     v_step := v_step + 1;
     
     -- Get final table stats
-    v_stats := f_defrag_get_table_size_stats_util(p_table_name);
+    v_stats := f_degrag_get_table_size_stats_util(p_table_name);
     prc_log_error_autonomous(v_proc_name, 'I', v_step, NULL, NULL, 
         'Archiving completed', 'Partitions: ' || v_partitions_archived || ', Records: ' || v_total_archived, USER);
     prc_log_error_autonomous(v_proc_name, 'I', v_step, NULL, NULL, 
         'Source table stats (after)', v_stats, USER);
     
-    v_stats := f_defrag_get_table_size_stats_util(p_table_name || '_ARCHIVE');
+    v_stats := f_degrag_get_table_size_stats_util(p_table_name || '_ARCHIVE');
     prc_log_error_autonomous(v_proc_name, 'I', v_step, NULL, NULL, 
         'Archive table stats (after)', v_stats, USER);
     
@@ -258,8 +258,8 @@ BEGIN
     DBMS_OUTPUT.PUT_LINE('Archiving completed successfully!');
     DBMS_OUTPUT.PUT_LINE('Partitions archived: ' || v_partitions_archived);
     DBMS_OUTPUT.PUT_LINE('Total records archived: ' || v_total_archived);
-    DBMS_OUTPUT.PUT_LINE('Source stats: ' || f_defrag_get_table_size_stats_util(p_table_name));
-    DBMS_OUTPUT.PUT_LINE('Archive stats: ' || f_defrag_get_table_size_stats_util(p_table_name || '_ARCHIVE'));
+    DBMS_OUTPUT.PUT_LINE('Source stats: ' || f_degrag_get_table_size_stats_util(p_table_name));
+    DBMS_OUTPUT.PUT_LINE('Archive stats: ' || f_degrag_get_table_size_stats_util(p_table_name || '_ARCHIVE'));
     DBMS_OUTPUT.PUT_LINE('===========================================');
     
 EXCEPTION
