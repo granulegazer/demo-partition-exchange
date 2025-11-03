@@ -88,8 +88,19 @@ FOR EXCHANGE WITH TABLE sales;
 -- Verify table creation
 SELECT 'Sales table created with interval partitioning' AS status FROM dual;
 SELECT 'Archive table created with compression' AS status FROM dual;
+-- SQL*Plus display settings for better column-based output
+SET LINESIZE 200
+SET PAGESIZE 50000
+SET COLSEP ' | '
+SET TRIMSPOOL ON
+SET TRIMOUT ON
+SET FEEDBACK OFF
+SET VERIFY OFF
+SET ECHO OFF
 
--- Check initial partition count
+COLUMN status        FORMAT A60
+COLUMN table_name    FORMAT A30
+COLUMN partition_count FORMAT 9999999
 SELECT 
     table_name,
     COUNT(*) AS partition_count
