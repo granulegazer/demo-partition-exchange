@@ -1,3 +1,13 @@
+SELECT column_id, t.column_name, t.data_type, t.data_length,
+       p.column_name, p.data_type, p.data_length
+FROM user_tab_cols t FULL OUTER JOIN user_tab_cols p
+USING (column_id)
+WHERE t.table_name = 'PARTITIONED_TABLE' AND p.table_name = 'TEMP_TABLE'
+  AND (t.column_name IS NULL OR p.column_name IS NULL
+       OR t.column_name <> p.column_name
+       OR t.data_type <> p.data_type
+       OR t.data_length <> p.data_length);
+
 -- ========================================
 -- MANUAL PARTITION EXCHANGE - PURE SQL WITH FUNCTIONS
 -- ========================================
@@ -68,6 +78,10 @@ DROP TABLE sales_staging_temp PURGE;
 
 CREATE TABLE sales_staging_temp AS 
 SELECT * FROM sales WHERE 1=0;
+
+-- Add primary key constraint to match source table
+ALTER TABLE sales_staging_temp 
+ADD CONSTRAINT pk_staging_temp PRIMARY KEY (sale_id, sale_date);
 
 PROMPT Staging table created
 
