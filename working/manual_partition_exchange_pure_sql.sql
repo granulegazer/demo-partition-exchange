@@ -74,8 +74,8 @@ PROMPT ===========================================
 -- Clean up if exists
 DROP TABLE sales_staging_temp PURGE;
 
-CREATE TABLE sales_staging_temp AS 
-SELECT * FROM sales WHERE 1=0;
+CREATE TABLE sales_staging_temp
+FOR EXCHANGE WITH TABLE sales;
 
 PROMPT Staging table created
 
