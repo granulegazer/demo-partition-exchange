@@ -65,8 +65,7 @@ PARTITION BY RANGE (sale_date)
 INTERVAL (NUMTODSINTERVAL(1, 'DAY'))
 (
     PARTITION sales_old VALUES LESS THAN (DATE '2000-01-01')
-)
-COMPRESS BASIC;  -- Using basic compression available in all editions
+);
 
 -- Create local indexes on archive matching the source table
 CREATE INDEX idx_archive_date ON sales_archive(sale_date) LOCAL;
