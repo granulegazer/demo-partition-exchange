@@ -8,27 +8,33 @@ CREATE OR REPLACE FUNCTION get_partition_name_by_date(
 ) RETURN VARCHAR2
 IS
     v_partition_name VARCHAR2(128);
-    v_high_value DATE;
+    v_high_value_str VARCHAR2(32767);
+    v_high_value_date DATE;
+
+    CURSOR c_partitions IS
+        SELECT partition_name, high_value
+        FROM user_tab_partitions
+        WHERE table_name = UPPER(p_table_name)
+        ORDER BY partition_position;
+
 BEGIN
-    -- Find partition where the high_value matches the date + 1
-    -- (since partition high_value is exclusive boundary)
-    SELECT partition_name
-    INTO v_partition_name
-    FROM user_tab_partitions
-    WHERE table_name = UPPER(p_table_name)
-      AND partition_name != 'SALES_OLD'
-      AND TO_DATE(
-            TRIM(BOTH '''' FROM REGEXP_SUBSTR(high_value, '''[^'']+''')),
-            'YYYY-MM-DD'
-          ) = p_date + 1;
-    
-    RETURN v_partition_name;
+    FOR rec IN c_partitions LOOP
+        v_high_value_str := rec.high_value;
+        IF UPPER(v_high_value_str) = 'MAXVALUE' THEN
+            v_high_value_date := TO_DATE('9999-12-31 23:59:59', 'yyyy-mm-dd hh24:mi:ss');
+        ELSE
+            EXECUTE IMMEDIATE 'SELECT ' || v_high_value_str || ' FROM dual' INTO v_high_value_date;
+        END IF;
+
+        -- Partition high_value is exclusive boundary
+        IF p_date < v_high_value_date THEN
+            RETURN rec.partition_name;
+        END IF;
+    END LOOP;
+
+    RETURN NULL;
+
 EXCEPTION
-    WHEN NO_DATA_FOUND THEN
-        RETURN NULL;
-    WHEN TOO_MANY_ROWS THEN
-        -- Should not happen with proper partitioning
-        RETURN NULL;
     WHEN OTHERS THEN
         DBMS_OUTPUT.PUT_LINE('ERROR in get_partition_name_by_date: ' || SQLERRM);
         RETURN NULL;
