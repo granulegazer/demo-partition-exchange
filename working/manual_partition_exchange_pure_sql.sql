@@ -22,8 +22,6 @@ PROMPT Source Table: SALES
 PROMPT Archive Table: SALES_ARCHIVE
 PROMPT
 
-PAUSE Press Enter to continue or Ctrl+C to exit...
-
 -- Display initial table stats
 PROMPT ===========================================
 PROMPT Initial Table Statistics
@@ -41,8 +39,6 @@ FROM dual;
 
 PROMPT
 
-PAUSE Press Enter to continue...
-
 PROMPT ===========================================
 PROMPT STEP 1: Get partition name using function
 PROMPT ===========================================
@@ -54,8 +50,6 @@ FROM dual;
 
 PROMPT
 
-PAUSE Press Enter to continue...
-
 PROMPT ===========================================
 PROMPT STEP 2: Verify partition and count records
 PROMPT ===========================================
@@ -64,8 +58,6 @@ SELECT COUNT(*) AS record_count
 FROM sales PARTITION (SYS_P21);  -- *** REPLACE WITH YOUR PARTITION NAME ***
 
 PROMPT
-
-PAUSE Press Enter to continue...
 
 PROMPT ===========================================
 PROMPT STEP 3: Create staging table
@@ -79,8 +71,6 @@ FOR EXCHANGE WITH TABLE sales;
 
 PROMPT Staging table created
 
-PAUSE Press Enter to continue...
-
 PROMPT ===========================================
 PROMPT STEP 4: Create indexes on staging table
 PROMPT ===========================================
@@ -90,8 +80,6 @@ CREATE INDEX idx_staging_customer ON sales_staging_temp(customer_id);
 CREATE INDEX idx_staging_region ON sales_staging_temp(region);
 
 PROMPT Indexes created
-
-PAUSE Press Enter to continue...
 
 PROMPT ===========================================
 PROMPT STEP 5: Exchange partition from source to staging
@@ -105,8 +93,6 @@ INCLUDING INDEXES WITHOUT VALIDATION;
 
 PROMPT Exchange from SALES to staging completed
 
-PAUSE Press Enter to continue...
-
 PROMPT ===========================================
 PROMPT STEP 6: Get archive partition name using function
 PROMPT ===========================================
@@ -114,8 +100,6 @@ PROMPT ===========================================
 SELECT 
     get_partition_name_by_date('SALES_ARCHIVE', DATE '2024-01-15') AS archive_partition_name
 FROM dual;
-
-PAUSE Press Enter to continue...
 
 PROMPT ===========================================
 PROMPT STEP 7: Create archive partition if needed
@@ -148,8 +132,6 @@ BEGIN
 END;
 /
 
-PAUSE Press Enter to continue...
-
 PROMPT ===========================================
 PROMPT STEP 8: Refresh archive partition name
 PROMPT ===========================================
@@ -157,8 +139,6 @@ PROMPT ===========================================
 SELECT 
     get_partition_name_by_date('SALES_ARCHIVE', DATE '2024-01-15') AS archive_partition_name
 FROM dual;
-
-PAUSE Press Enter to continue...
 
 PROMPT ===========================================
 PROMPT STEP 9: Exchange partition from staging to archive
@@ -172,8 +152,6 @@ INCLUDING INDEXES WITHOUT VALIDATION;
 
 PROMPT Exchange from staging to SALES_ARCHIVE completed
 
-PAUSE Press Enter to continue...
-
 PROMPT ===========================================
 PROMPT STEP 10: Drop staging table
 PROMPT ===========================================
@@ -181,8 +159,6 @@ PROMPT ===========================================
 DROP TABLE sales_staging_temp PURGE;
 
 PROMPT Staging table dropped
-
-PAUSE Press Enter to continue...
 
 PROMPT ===========================================
 PROMPT STEP 11: Drop empty partition from source
@@ -192,8 +168,6 @@ ALTER TABLE sales
 DROP PARTITION SYS_P21;  -- *** REPLACE WITH YOUR SOURCE PARTITION NAME ***
 
 PROMPT Empty partition dropped from SALES
-
-PAUSE Press Enter to continue...
 
 PROMPT ===========================================
 PROMPT STEP 12: Verify the exchange
