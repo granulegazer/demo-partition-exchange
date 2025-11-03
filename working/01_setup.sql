@@ -58,9 +58,18 @@ CREATE INDEX idx_sales_date ON sales(sale_date) LOCAL;
 CREATE INDEX idx_sales_customer ON sales(customer_id) LOCAL;
 CREATE INDEX idx_sales_region ON sales(region) LOCAL;
 
--- Create archive table using FOR EXCHANGE syntax for perfect compatibility
-CREATE TABLE sales_archive
-FOR EXCHANGE WITH TABLE sales
+-- Create archive table with same structure as sales table
+CREATE TABLE sales_archive (
+    sale_id NUMBER,
+    sale_date DATE NOT NULL,
+    customer_id NUMBER,
+    product_id NUMBER,
+    amount NUMBER(10,2),
+    quantity NUMBER,
+    region VARCHAR2(50),
+    status VARCHAR2(20),
+    CONSTRAINT pk_sales_archive PRIMARY KEY (sale_id, sale_date)
+)
 PARTITION BY RANGE (sale_date)
 INTERVAL (NUMTODSINTERVAL(1, 'DAY'))
 (
@@ -75,10 +84,6 @@ CREATE INDEX idx_archive_region ON sales_archive(region) LOCAL;
 -- Create staging table template for exchange operations
 CREATE TABLE sales_staging_template
 FOR EXCHANGE WITH TABLE sales;
-
--- Add primary key constraint to archive table
-ALTER TABLE sales_archive 
-ADD CONSTRAINT pk_sales_archive PRIMARY KEY (sale_id, sale_date);
 
 -- Verify table creation
 SELECT 'Sales table created with interval partitioning' AS status FROM dual;
