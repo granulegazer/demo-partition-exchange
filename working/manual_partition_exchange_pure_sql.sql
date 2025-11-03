@@ -66,8 +66,8 @@ PROMPT ===========================================
 -- Clean up if exists
 DROP TABLE sales_staging_temp PURGE;
 
-CREATE TABLE sales_staging_temp
-FOR EXCHANGE WITH TABLE sales;
+CREATE TABLE sales_staging_temp AS 
+SELECT * FROM sales WHERE 1=0;
 
 PROMPT Staging table created
 
@@ -146,7 +146,7 @@ PROMPT ===========================================
 PROMPT This is INSTANT - metadata only operation
 
 ALTER TABLE sales_archive 
-EXCHANGE PARTITION SYS_P21  -- *** REPLACE WITH YOUR ARCHIVE PARTITION NAME ***
+EXCHANGE PARTITION SYS_P495298  -- *** REPLACE WITH YOUR ARCHIVE PARTITION NAME ***
 WITH TABLE sales_staging_temp 
 INCLUDING INDEXES WITHOUT VALIDATION;
 
