@@ -1,55 +1,66 @@
 -- ========================================
--- MANUAL PARTITION EXCHANGE - PURE SQL
+-- MANUAL PARTITION EXCHANGE - PURE SQL WITH FUNCTIONS
 -- ========================================
--- This script performs partition exchange using only SQL statements
--- No PL/SQL blocks - just straight SQL commands
+-- This script performs partition exchange using the get_partition_name_by_date function
+-- No complex partition name lookups - just specify the date
 --
 -- INSTRUCTIONS:
--- 1. Run Step 1 to find the partition name for your target date
--- 2. Note the partition name (e.g., SYS_P12345)
--- 3. Replace PARTITION_NAME_HERE with the actual partition name in subsequent steps
--- 4. Run each step in sequence
+-- 1. Update the target date below
+-- 2. Run the script
 -- ========================================
 
 SET ECHO ON
 SET FEEDBACK ON
 SET LINESIZE 200
+SET SERVEROUTPUT ON
 
 PROMPT ===========================================
-PROMPT STEP 1: Find partition name for target date
+PROMPT MANUAL PARTITION EXCHANGE
 PROMPT ===========================================
-PROMPT Replace the date below with your target date
-PROMPT Example: WHERE ... = DATE '2024-01-15' + 1
 
-SELECT 
-    partition_name,
-    high_value,
-    TO_DATE(
-        TRIM(BOTH '''' FROM REGEXP_SUBSTR(high_value, '''[^'']+''')),
-        'YYYY-MM-DD'
-    ) - 1 AS data_date
-FROM user_tab_partitions
-WHERE table_name = 'SALES'
-  AND partition_name != 'SALES_OLD'
-  AND TO_DATE(
-        TRIM(BOTH '''' FROM REGEXP_SUBSTR(high_value, '''[^'']+''')),
-        'YYYY-MM-DD'
-      ) = DATE '2024-01-15' + 1  -- *** CHANGE THIS DATE ***
-ORDER BY partition_position;
+-- *** CONFIGURE THESE VARIABLES ***
+DEFINE v_target_date = '2024-01-15'
+DEFINE v_source_table = 'SALES'
+DEFINE v_archive_table = 'SALES_ARCHIVE'
+DEFINE v_staging_table = 'SALES_STAGING_TEMP'
 
-PROMPT
-PROMPT Note the PARTITION_NAME from above (e.g., SYS_P12345)
+PROMPT Target Date: &v_target_date
+PROMPT Source Table: &v_source_table
+PROMPT Archive Table: &v_archive_table
 PROMPT
 
 PAUSE Press Enter to continue or Ctrl+C to exit...
 
 PROMPT ===========================================
-PROMPT STEP 2: Count records in source partition
+PROMPT STEP 1: Get partition name using function
 PROMPT ===========================================
-PROMPT Replace PARTITION_NAME_HERE below
+
+COLUMN partition_name FORMAT A30
+COLUMN data_for_date FORMAT A15
+
+SELECT 
+    get_partition_name_by_date('&v_source_table', DATE '&v_target_date') AS partition_name,
+    '&v_target_date' AS data_for_date
+FROM dual;
+
+PROMPT Note the partition name from above
+PROMPT
+
+PAUSE Press Enter to continue...
+
+PROMPT ===========================================
+PROMPT STEP 2: Verify partition and count records
+PROMPT ===========================================
+
+-- Store partition name in a variable using a query
+COLUMN pname NEW_VALUE source_partition NOPRINT
+SELECT get_partition_name_by_date('&v_source_table', DATE '&v_target_date') AS pname FROM dual;
 
 SELECT COUNT(*) AS record_count
-FROM sales PARTITION (PARTITION_NAME_HERE);  -- *** REPLACE PARTITION_NAME_HERE ***
+FROM &v_source_table PARTITION (&source_partition);
+
+PROMPT Records to be archived from partition: &source_partition
+PROMPT
 
 PAUSE Press Enter to continue...
 
@@ -57,10 +68,15 @@ PROMPT ===========================================
 PROMPT STEP 3: Create staging table
 PROMPT ===========================================
 
-DROP TABLE sales_staging_temp PURGE;
+-- Clean up if exists
+BEGIN
+    EXECUTE IMMEDIATE 'DROP TABLE &v_staging_table PURGE';
+EXCEPTION WHEN OTHERS THEN NULL;
+END;
+/
 
-CREATE TABLE sales_staging_temp AS 
-SELECT * FROM sales WHERE 1=0;
+CREATE TABLE &v_staging_table AS 
+SELECT * FROM &v_source_table WHERE 1=0;
 
 PROMPT Staging table created
 
@@ -70,105 +86,105 @@ PROMPT ===========================================
 PROMPT STEP 4: Create indexes on staging table
 PROMPT ===========================================
 
-CREATE INDEX idx_staging_date ON sales_staging_temp(sale_date);
-CREATE INDEX idx_staging_customer ON sales_staging_temp(customer_id);
-CREATE INDEX idx_staging_region ON sales_staging_temp(region);
+CREATE INDEX idx_staging_date ON &v_staging_table(sale_date);
+CREATE INDEX idx_staging_customer ON &v_staging_table(customer_id);
+CREATE INDEX idx_staging_region ON &v_staging_table(region);
 
 PROMPT Indexes created
 
 PAUSE Press Enter to continue...
 
 PROMPT ===========================================
-PROMPT STEP 5: Exchange partition from SALES to staging
+PROMPT STEP 5: Exchange partition from source to staging
 PROMPT ===========================================
 PROMPT This is INSTANT - metadata only operation
+PROMPT Partition: &source_partition
 
-ALTER TABLE sales 
-EXCHANGE PARTITION PARTITION_NAME_HERE  -- *** REPLACE PARTITION_NAME_HERE ***
-WITH TABLE sales_staging_temp 
+ALTER TABLE &v_source_table 
+EXCHANGE PARTITION &source_partition
+WITH TABLE &v_staging_table 
 INCLUDING INDEXES WITHOUT VALIDATION;
 
-PROMPT Exchange from SALES to staging completed
+PROMPT Exchange from &v_source_table to staging completed
 
 PAUSE Press Enter to continue...
 
 PROMPT ===========================================
-PROMPT STEP 6: Check if archive partition exists
+PROMPT STEP 6: Get archive partition name using function
 PROMPT ===========================================
+
+COLUMN aname NEW_VALUE archive_partition NOPRINT
+SELECT get_partition_name_by_date('&v_archive_table', DATE '&v_target_date') AS aname FROM dual;
+
+-- Display the partition name
+SELECT 
+    CASE 
+        WHEN get_partition_name_by_date('&v_archive_table', DATE '&v_target_date') IS NULL 
+        THEN 'Partition does not exist - will be created'
+        ELSE 'Partition exists: ' || get_partition_name_by_date('&v_archive_table', DATE '&v_target_date')
+    END AS archive_partition_status
+FROM dual;
+
+PAUSE Press Enter to continue...
+
+PROMPT ===========================================
+PROMPT STEP 7: Create archive partition if needed
+PROMPT ===========================================
+
+DECLARE
+    v_archive_partition VARCHAR2(128);
+BEGIN
+    v_archive_partition := get_partition_name_by_date('&v_archive_table', DATE '&v_target_date');
+    
+    IF v_archive_partition IS NULL THEN
+        DBMS_OUTPUT.PUT_LINE('Creating archive partition by inserting test row...');
+        
+        -- Insert one row to trigger interval partition creation
+        EXECUTE IMMEDIATE 'INSERT INTO &v_archive_table SELECT * FROM &v_staging_table WHERE ROWNUM = 1';
+        COMMIT;
+        
+        -- Get the newly created partition name
+        v_archive_partition := get_partition_name_by_date('&v_archive_table', DATE '&v_target_date');
+        DBMS_OUTPUT.PUT_LINE('Archive partition created: ' || v_archive_partition);
+        
+        -- Delete the test row
+        EXECUTE IMMEDIATE 'DELETE FROM &v_archive_table PARTITION (' || v_archive_partition || ')';
+        COMMIT;
+        
+        DBMS_OUTPUT.PUT_LINE('Test row removed');
+    ELSE
+        DBMS_OUTPUT.PUT_LINE('Archive partition already exists: ' || v_archive_partition);
+    END IF;
+END;
+/
+
+PAUSE Press Enter to continue...
+
+PROMPT ===========================================
+PROMPT STEP 8: Refresh archive partition name
+PROMPT ===========================================
+
+COLUMN aname NEW_VALUE archive_partition NOPRINT
+SELECT get_partition_name_by_date('&v_archive_table', DATE '&v_target_date') AS aname FROM dual;
 
 SELECT 
-    partition_name,
-    high_value
-FROM user_tab_partitions
-WHERE table_name = 'SALES_ARCHIVE'
-  AND partition_name != 'SALES_OLD'
-  AND TO_DATE(
-        TRIM(BOTH '''' FROM REGEXP_SUBSTR(high_value, '''[^'']+''')),
-        'YYYY-MM-DD'
-      ) = DATE '2024-01-15' + 1  -- *** CHANGE THIS DATE ***
-ORDER BY partition_position;
-
-PROMPT If no rows returned, partition doesn't exist - continue to Step 7
-PROMPT If partition exists, note the name and skip to Step 9
-
-PAUSE Press Enter to continue (or skip to Step 9 if partition exists)...
-
-PROMPT ===========================================
-PROMPT STEP 7: Create archive partition (if needed)
-PROMPT ===========================================
-PROMPT Insert one row to trigger interval partition creation
-
-INSERT INTO sales_archive 
-SELECT * FROM sales_staging_temp WHERE ROWNUM = 1;
-
-COMMIT;
-
-PROMPT Partition created
+    get_partition_name_by_date('&v_archive_table', DATE '&v_target_date') AS archive_partition_name
+FROM dual;
 
 PAUSE Press Enter to continue...
 
 PROMPT ===========================================
-PROMPT STEP 8: Find the newly created archive partition
-PROMPT ===========================================
-
-SELECT 
-    partition_name,
-    high_value
-FROM user_tab_partitions
-WHERE table_name = 'SALES_ARCHIVE'
-  AND partition_name != 'SALES_OLD'
-  AND TO_DATE(
-        TRIM(BOTH '''' FROM REGEXP_SUBSTR(high_value, '''[^'']+''')),
-        'YYYY-MM-DD'
-      ) = DATE '2024-01-15' + 1  -- *** CHANGE THIS DATE ***
-ORDER BY partition_position;
-
-PROMPT Note the ARCHIVE_PARTITION_NAME from above
-
-PAUSE Press Enter to continue...
-
-PROMPT ===========================================
-PROMPT STEP 8b: Delete the test row
-PROMPT ===========================================
-
-DELETE FROM sales_archive 
-PARTITION (ARCHIVE_PARTITION_NAME);  -- *** REPLACE ARCHIVE_PARTITION_NAME ***
-
-COMMIT;
-
-PAUSE Press Enter to continue...
-
-PROMPT ===========================================
-PROMPT STEP 9: Exchange partition from staging to SALES_ARCHIVE
+PROMPT STEP 9: Exchange partition from staging to archive
 PROMPT ===========================================
 PROMPT This is INSTANT - metadata only operation
+PROMPT Partition: &archive_partition
 
-ALTER TABLE sales_archive 
-EXCHANGE PARTITION ARCHIVE_PARTITION_NAME  -- *** REPLACE ARCHIVE_PARTITION_NAME ***
-WITH TABLE sales_staging_temp 
+ALTER TABLE &v_archive_table 
+EXCHANGE PARTITION &archive_partition
+WITH TABLE &v_staging_table 
 INCLUDING INDEXES WITHOUT VALIDATION;
 
-PROMPT Exchange from staging to SALES_ARCHIVE completed
+PROMPT Exchange from staging to &v_archive_table completed
 
 PAUSE Press Enter to continue...
 
@@ -176,20 +192,21 @@ PROMPT ===========================================
 PROMPT STEP 10: Drop staging table
 PROMPT ===========================================
 
-DROP TABLE sales_staging_temp PURGE;
+DROP TABLE &v_staging_table PURGE;
 
 PROMPT Staging table dropped
 
 PAUSE Press Enter to continue...
 
 PROMPT ===========================================
-PROMPT STEP 11: Drop empty partition from SALES
+PROMPT STEP 11: Drop empty partition from source
 PROMPT ===========================================
+PROMPT Partition: &source_partition
 
-ALTER TABLE sales 
-DROP PARTITION PARTITION_NAME_HERE;  -- *** REPLACE PARTITION_NAME_HERE ***
+ALTER TABLE &v_source_table 
+DROP PARTITION &source_partition;
 
-PROMPT Empty partition dropped from SALES table
+PROMPT Empty partition dropped from &v_source_table
 
 PAUSE Press Enter to continue...
 
@@ -197,49 +214,25 @@ PROMPT ===========================================
 PROMPT STEP 12: Verify the exchange
 PROMPT ===========================================
 
-SELECT 'Records in archive partition:' AS description, COUNT(*) AS count
-FROM sales_archive 
-PARTITION (ARCHIVE_PARTITION_NAME);  -- *** REPLACE ARCHIVE_PARTITION_NAME ***
+SELECT 
+    '&v_archive_table' AS table_name,
+    '&archive_partition' AS partition_name,
+    COUNT(*) AS record_count
+FROM &v_archive_table 
+PARTITION (&archive_partition);
 
 PROMPT ===========================================
-PROMPT EXCHANGE COMPLETED
+PROMPT EXCHANGE COMPLETED SUCCESSFULLY
+PROMPT ===========================================
+PROMPT Date archived: &v_target_date
+PROMPT Source partition: &source_partition
+PROMPT Archive partition: &archive_partition
 PROMPT ===========================================
 
--- ========================================
--- ALTERNATIVE: Single-shot version
--- Copy these commands, replace the placeholders, and run them all at once
--- ========================================
-/*
--- Step 1: Find partition (run first, then copy partition name)
-SELECT partition_name, high_value
-FROM user_tab_partitions
-WHERE table_name = 'SALES'
-  AND TO_DATE(TRIM(BOTH '''' FROM REGEXP_SUBSTR(high_value, '''[^'']+''')), 'YYYY-MM-DD') = DATE '2024-01-15' + 1;
-
--- Step 2-12: Replace PARTITION_NAME and ARCHIVE_PARTITION_NAME then run all
-
-DROP TABLE sales_staging_temp PURGE;
-CREATE TABLE sales_staging_temp AS SELECT * FROM sales WHERE 1=0;
-CREATE INDEX idx_staging_date ON sales_staging_temp(sale_date);
-CREATE INDEX idx_staging_customer ON sales_staging_temp(customer_id);
-CREATE INDEX idx_staging_region ON sales_staging_temp(region);
-
-ALTER TABLE sales EXCHANGE PARTITION SYS_P12345 WITH TABLE sales_staging_temp INCLUDING INDEXES WITHOUT VALIDATION;
-
-INSERT INTO sales_archive SELECT * FROM sales_staging_temp WHERE ROWNUM = 1;
-COMMIT;
-
-SELECT partition_name FROM user_tab_partitions 
-WHERE table_name = 'SALES_ARCHIVE' 
-  AND TO_DATE(TRIM(BOTH '''' FROM REGEXP_SUBSTR(high_value, '''[^'']+''')), 'YYYY-MM-DD') = DATE '2024-01-15' + 1;
-
-DELETE FROM sales_archive PARTITION (SYS_P67890);
-COMMIT;
-
-ALTER TABLE sales_archive EXCHANGE PARTITION SYS_P67890 WITH TABLE sales_staging_temp INCLUDING INDEXES WITHOUT VALIDATION;
-
-DROP TABLE sales_staging_temp PURGE;
-ALTER TABLE sales DROP PARTITION SYS_P12345;
-
-SELECT COUNT(*) FROM sales_archive PARTITION (SYS_P67890);
-*/
+-- Reset SQL*Plus settings
+UNDEFINE v_target_date
+UNDEFINE v_source_table
+UNDEFINE v_archive_table
+UNDEFINE v_staging_table
+UNDEFINE source_partition
+UNDEFINE archive_partition
