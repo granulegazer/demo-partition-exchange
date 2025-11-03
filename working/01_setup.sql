@@ -58,16 +58,15 @@ CREATE INDEX idx_sales_date ON sales(sale_date) LOCAL;
 CREATE INDEX idx_sales_customer ON sales(customer_id) LOCAL;
 CREATE INDEX idx_sales_region ON sales(region) LOCAL;
 
--- Create archive table using CTAS for exchange compatibility
+-- Create archive table using FOR EXCHANGE syntax for perfect compatibility
 CREATE TABLE sales_archive
+FOR EXCHANGE WITH TABLE sales
 PARTITION BY RANGE (sale_date)
 INTERVAL (NUMTODSINTERVAL(1, 'DAY'))
 (
     PARTITION sales_old VALUES LESS THAN (DATE '2000-01-01')
 )
-COMPRESS BASIC  -- Using basic compression available in all editions
-AS 
-SELECT * FROM sales WHERE 1=0;
+COMPRESS BASIC;  -- Using basic compression available in all editions
 
 -- Create local indexes on archive matching the source table
 CREATE INDEX idx_archive_date ON sales_archive(sale_date) LOCAL;
@@ -76,9 +75,9 @@ CREATE INDEX idx_archive_region ON sales_archive(region) LOCAL;
 
 -- Create staging table template for exchange operations
 CREATE TABLE sales_staging_template
-AS SELECT * FROM sales WHERE 1=0;
+FOR EXCHANGE WITH TABLE sales;
 
--- Add primary key constraint to archive table (must be done after CTAS)
+-- Add primary key constraint to archive table
 ALTER TABLE sales_archive 
 ADD CONSTRAINT pk_sales_archive PRIMARY KEY (sale_id, sale_date);
 
