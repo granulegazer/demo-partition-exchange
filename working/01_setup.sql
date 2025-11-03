@@ -50,7 +50,7 @@ CREATE TABLE sales (
 PARTITION BY RANGE (sale_date)
 INTERVAL (NUMTODSINTERVAL(1, 'DAY'))  -- Auto-create partition per day
 (
-    PARTITION p_initial VALUES LESS THAN (TO_DATE('2024-01-01', 'YYYY-MM-DD'))
+    PARTITION sales_old VALUES LESS THAN (DATE '2000-01-01')
 );
 
 -- Create local indexes
@@ -63,7 +63,7 @@ CREATE TABLE sales_archive
 PARTITION BY RANGE (sale_date)
 INTERVAL (NUMTODSINTERVAL(1, 'DAY'))
 (
-    PARTITION p_archive_initial VALUES LESS THAN (DATE '2024-01-01')
+    PARTITION sales_old VALUES LESS THAN (DATE '2000-01-01')
 )
 COMPRESS BASIC  -- Using basic compression available in all editions
 AS 
