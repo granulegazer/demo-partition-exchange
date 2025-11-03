@@ -83,17 +83,7 @@ SELECT * FROM sales WHERE 1=0;
 ALTER TABLE sales_staging_temp 
 ADD CONSTRAINT pk_staging_temp PRIMARY KEY (sale_id, sale_date);
 
-PROMPT Staging table created
-
-PROMPT ===========================================
-PROMPT STEP 4: Create indexes on staging table
-PROMPT ===========================================
-
-CREATE INDEX idx_staging_date ON sales_staging_temp(sale_date);
-CREATE INDEX idx_staging_customer ON sales_staging_temp(customer_id);
-CREATE INDEX idx_staging_region ON sales_staging_temp(region);
-
-PROMPT Indexes created
+PROMPT Staging table created (no indexes - will be exchanged automatically)
 
 PROMPT ===========================================
 PROMPT STEP 5: Exchange partition from source to staging
@@ -103,7 +93,7 @@ PROMPT This is INSTANT - metadata only operation
 ALTER TABLE sales 
 EXCHANGE PARTITION SYS_P21  -- *** REPLACE WITH YOUR PARTITION NAME ***
 WITH TABLE sales_staging_temp 
-INCLUDING INDEXES WITHOUT VALIDATION;
+WITHOUT VALIDATION;
 
 PROMPT Exchange from SALES to staging completed
 
@@ -155,19 +145,19 @@ SELECT
 FROM dual;
 
 PROMPT ===========================================
-PROMPT STEP 9: Exchange partition from staging to archive
+PROMPT STEP 8: Exchange partition from staging to archive
 PROMPT ===========================================
 PROMPT This is INSTANT - metadata only operation
 
 ALTER TABLE sales_archive 
 EXCHANGE PARTITION SYS_P495298  -- *** REPLACE WITH YOUR ARCHIVE PARTITION NAME ***
 WITH TABLE sales_staging_temp 
-INCLUDING INDEXES WITHOUT VALIDATION;
+WITHOUT VALIDATION;
 
 PROMPT Exchange from staging to SALES_ARCHIVE completed
 
 PROMPT ===========================================
-PROMPT STEP 10: Drop staging table
+PROMPT STEP 9: Drop staging table
 PROMPT ===========================================
 
 DROP TABLE sales_staging_temp PURGE;
@@ -175,7 +165,7 @@ DROP TABLE sales_staging_temp PURGE;
 PROMPT Staging table dropped
 
 PROMPT ===========================================
-PROMPT STEP 11: Drop empty partition from source
+PROMPT STEP 10: Drop empty partition from source
 PROMPT ===========================================
 
 ALTER TABLE sales 
@@ -184,7 +174,7 @@ DROP PARTITION SYS_P21;  -- *** REPLACE WITH YOUR SOURCE PARTITION NAME ***
 PROMPT Empty partition dropped from SALES
 
 PROMPT ===========================================
-PROMPT STEP 12: Verify the exchange
+PROMPT STEP 11: Verify the exchange
 PROMPT ===========================================
 
 SELECT 
