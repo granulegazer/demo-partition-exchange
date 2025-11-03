@@ -81,14 +81,53 @@ INCLUDING INDEXES WITHOUT VALIDATION;
 ALTER TABLE sales DROP PARTITION partition_name;
 ```
 
-### 5. Error Handling
+### 5. Error Handling and Logging
+
+Use the autonomous logging procedure for tracking steps and errors:
+
+```sql
+-- Log informational message
+prc_log_error_autonomous(
+    p_table_name   => 'ARCHIVE_PROCEDURE',
+    p_error_type   => 'I',
+    p_trace_code   => step_number,
+    p_sql_error_num => NULL,
+    p_sql_error_msg => NULL,
+    p_error_info1  => 'Step description',
+    p_error_info2  => additional_info,
+    p_user_id      => USER
+);
+
+-- Log error
+prc_log_error_autonomous(
+    p_table_name   => 'ARCHIVE_PROCEDURE',
+    p_error_type   => 'E',
+    p_trace_code   => step_number,
+    p_sql_error_num => SQLCODE,
+    p_sql_error_msg => SQLERRM,
+    p_error_info1  => 'Error description',
+    p_error_info2  => NULL,
+    p_user_id      => USER
+);
+```
 
 Include proper cleanup in exception handlers:
 
 ```sql
 EXCEPTION
     WHEN OTHERS THEN
-        DBMS_OUTPUT.PUT_LINE('ERROR: ' || SQLERRM);
+        -- Log the error
+        prc_log_error_autonomous(
+            p_table_name   => 'PROCEDURE_NAME',
+            p_error_type   => 'E',
+            p_trace_code   => v_step,
+            p_sql_error_num => SQLCODE,
+            p_sql_error_msg => SQLERRM,
+            p_error_info1  => 'Error in procedure',
+            p_error_info2  => NULL,
+            p_user_id      => USER
+        );
+        
         -- Clean up staging table if exists
         BEGIN
             EXECUTE IMMEDIATE 'DROP TABLE sales_staging_temp';
@@ -97,6 +136,42 @@ EXCEPTION
         ROLLBACK;
         RAISE;
 END;
+```
+
+### 6. Logging Procedure Specification
+
+**Procedure**: `prc_log_error_autonomous`
+
+**Purpose**: Logs error and informational messages to ERROR_LOG_TABLE using an autonomous transaction.
+
+**Parameters**:
+- `p_table_name` - Name of the table or procedure related to the log entry
+- `p_error_type` - Type of log entry ('I' for info, 'E' for error)
+- `p_trace_code` - Trace code or step number for tracking
+- `p_sql_error_num` - SQL error number, if applicable
+- `p_sql_error_msg` - SQL error message, if applicable
+- `p_error_info1` - Additional information (step, message, details)
+- `p_error_info2` - Additional information (optional)
+- `p_user_id` - User ID or context for the log entry
+
+**Usage Pattern**:
+```sql
+-- Start of procedure
+v_step := 1;
+prc_log_error_autonomous('ARCHIVE_PROC', 'I', v_step, NULL, NULL, 'Starting archival', NULL, USER);
+
+-- Before each major step
+v_step := v_step + 1;
+prc_log_error_autonomous('ARCHIVE_PROC', 'I', v_step, NULL, NULL, 
+    'Exchanging partition', partition_name, USER);
+
+-- After successful step
+prc_log_error_autonomous('ARCHIVE_PROC', 'I', v_step, NULL, NULL, 
+    'Exchange completed', v_count || ' records', USER);
+
+-- In exception handler
+prc_log_error_autonomous('ARCHIVE_PROC', 'E', v_step, SQLCODE, SQLERRM, 
+    'Step failed', additional_context, USER);
 ```
 
 ## Architectural Patterns
