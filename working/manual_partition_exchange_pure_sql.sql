@@ -29,6 +29,23 @@ PROMPT Source Table: &v_source_table
 PROMPT Archive Table: &v_archive_table
 PROMPT
 
+-- Display initial table stats
+PROMPT ===========================================
+PROMPT Initial Table Statistics
+PROMPT ===========================================
+
+SELECT 
+    '&v_source_table' AS table_name,
+    f_defrag_get_table_size_stats_util('&v_source_table') AS table_stats
+FROM dual
+UNION ALL
+SELECT 
+    '&v_archive_table' AS table_name,
+    f_defrag_get_table_size_stats_util('&v_archive_table') AS table_stats
+FROM dual;
+
+PROMPT
+
 PAUSE Press Enter to continue or Ctrl+C to exit...
 
 PROMPT ===========================================
@@ -220,6 +237,20 @@ SELECT
     COUNT(*) AS record_count
 FROM &v_archive_table 
 PARTITION (&archive_partition);
+
+PROMPT ===========================================
+PROMPT Final Table Statistics
+PROMPT ===========================================
+
+SELECT 
+    '&v_source_table' AS table_name,
+    f_defrag_get_table_size_stats_util('&v_source_table') AS table_stats
+FROM dual
+UNION ALL
+SELECT 
+    '&v_archive_table' AS table_name,
+    f_defrag_get_table_size_stats_util('&v_archive_table') AS table_stats
+FROM dual;
 
 PROMPT ===========================================
 PROMPT EXCHANGE COMPLETED SUCCESSFULLY

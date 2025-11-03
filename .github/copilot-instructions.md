@@ -174,6 +174,35 @@ prc_log_error_autonomous('ARCHIVE_PROC', 'E', v_step, SQLCODE, SQLERRM,
     'Step failed', additional_context, USER);
 ```
 
+### 7. Table Statistics Function
+
+**Function**: `f_defrag_get_table_size_stats_util`
+
+**Purpose**: Returns partition table size statistics for monitoring and debugging.
+
+**Usage Pattern**:
+```sql
+-- Log table stats before operation
+v_stats := f_defrag_get_table_size_stats_util(p_table_name);
+prc_log_error_autonomous('ARCHIVE_PROC', 'I', v_step, NULL, NULL, 
+    'Table stats before exchange', v_stats, USER);
+
+-- Log stats after operation
+v_stats := f_defrag_get_table_size_stats_util(p_table_name);
+prc_log_error_autonomous('ARCHIVE_PROC', 'I', v_step, NULL, NULL, 
+    'Table stats after exchange', v_stats, USER);
+
+-- Display stats in output
+DBMS_OUTPUT.PUT_LINE('Source table stats: ' || f_defrag_get_table_size_stats_util('SALES'));
+DBMS_OUTPUT.PUT_LINE('Archive table stats: ' || f_defrag_get_table_size_stats_util('SALES_ARCHIVE'));
+```
+
+**Best Practice**: Call this function before and after partition exchange operations to track:
+- Partition count changes
+- Space utilization
+- Table size metrics
+- Performance monitoring data
+
 ## Architectural Patterns
 
 ### Data Flow

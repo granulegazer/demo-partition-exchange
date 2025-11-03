@@ -26,8 +26,9 @@ DECLARE
     v_count NUMBER;
 BEGIN
     DBMS_OUTPUT.PUT_LINE('===========================================');
-    DBMS_OUTPUT.PUT_LINE('MANUAL PARTITION EXCHANGE');
-    DBMS_OUTPUT.PUT_LINE('Date to archive: ' || TO_CHAR(v_date_to_archive, 'YYYY-MM-DD'));
+    DBMS_OUTPUT.PUT_LINE('Starting partition archiving for ' || p_dates.COUNT || ' dates');
+    DBMS_OUTPUT.PUT_LINE('Source table stats: ' || f_defrag_get_table_size_stats_util('SALES'));
+    DBMS_OUTPUT.PUT_LINE('Archive table stats: ' || f_defrag_get_table_size_stats_util('SALES_ARCHIVE'));
     DBMS_OUTPUT.PUT_LINE('===========================================');
     
     -- Step 1: Find the partition name for the source table
@@ -150,6 +151,8 @@ BEGIN
     DBMS_OUTPUT.PUT_LINE('✓ PARTITION EXCHANGE COMPLETED SUCCESSFULLY');
     DBMS_OUTPUT.PUT_LINE('   Date archived: ' || TO_CHAR(v_date_to_archive, 'YYYY-MM-DD'));
     DBMS_OUTPUT.PUT_LINE('   Records archived: ' || v_count);
+    DBMS_OUTPUT.PUT_LINE('Source table stats: ' || f_defrag_get_table_size_stats_util('SALES'));
+    DBMS_OUTPUT.PUT_LINE('Archive table stats: ' || f_defrag_get_table_size_stats_util('SALES_ARCHIVE'));
     DBMS_OUTPUT.PUT_LINE('===========================================');
     
 EXCEPTION
