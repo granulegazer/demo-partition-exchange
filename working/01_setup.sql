@@ -76,7 +76,7 @@ CREATE TABLE snparch_cnf_partition_archive (
 ) SEGMENT CREATION IMMEDIATE;
 
 -- Add comments using Oracle 19c style
-COMMENT ON TABLE snparch_cnf_partition_archive IS 'Configuration table for partition archival process - Oracle 19.26';
+COMMENT ON TABLE snparch_cnf_partition_archive IS 'Configuration table for partition archival process';
 COMMENT ON COLUMN snparch_cnf_partition_archive.source_table_name IS 'Source partitioned table name';
 COMMENT ON COLUMN snparch_cnf_partition_archive.archive_table_name IS 'Archive partitioned table name';
 COMMENT ON COLUMN snparch_cnf_partition_archive.staging_table_name IS 'Temporary staging table name for exchange';
@@ -144,7 +144,7 @@ CREATE INDEX idx_snparch_ctl_exec_date ON snparch_ctl_execution_log(execution_da
 CREATE INDEX idx_snparch_ctl_src_table ON snparch_ctl_execution_log(source_table_name, execution_date);
 CREATE INDEX idx_snparch_ctl_part_date ON snparch_ctl_execution_log(partition_date);
 
-COMMENT ON TABLE snparch_ctl_execution_log IS 'Execution log for partition exchange operations - Oracle 19.26';
+COMMENT ON TABLE snparch_ctl_execution_log IS 'Execution log for partition exchange operations';
 COMMENT ON COLUMN snparch_ctl_execution_log.execution_id IS 'Unique execution identifier (auto-generated identity column)';
 COMMENT ON COLUMN snparch_ctl_execution_log.execution_date IS 'Timestamp when partition exchange was executed';
 COMMENT ON COLUMN snparch_ctl_execution_log.source_table_name IS 'Source table from which partition was archived';
