@@ -26,11 +26,12 @@ DECLARE
     v_tablespace VARCHAR2(128);
     v_num_indexes NUMBER;
     v_num_constraints NUMBER;
+    v_col_list VARCHAR2(4000);
     
 BEGIN
-    -- Set archive and staging table names
-    v_archive_table := v_source_table || '_ARCHIVE';
-    v_staging_table := v_source_table || '_STAGING_TEMP';
+    -- Set archive and staging table names with SNPARCH_ prefix
+    v_archive_table := 'SNPARCH_' || v_source_table;
+    v_staging_table := 'SNPARCH_' || v_source_table || '_STAGING_TEMP';
     
     DBMS_OUTPUT.PUT_LINE('================================================================================');
     DBMS_OUTPUT.PUT_LINE('ARCHIVE SETUP GENERATOR FOR TABLE: ' || v_source_table);
@@ -188,10 +189,38 @@ BEGIN
     DBMS_OUTPUT.PUT_LINE('END;');
     DBMS_OUTPUT.PUT_LINE('/');
     DBMS_OUTPUT.PUT_LINE('');
-    DBMS_OUTPUT.PUT_LINE('-- Create staging template for exchange operations');
-    DBMS_OUTPUT.PUT_LINE('CREATE TABLE ' || v_staging_table);
-    DBMS_OUTPUT.PUT_LINE('FOR EXCHANGE WITH TABLE ' || v_source_table || ';');
+    DBMS_OUTPUT.PUT_LINE('-- Create staging table (empty structure from source)');
+    DBMS_OUTPUT.PUT_LINE('CREATE TABLE ' || v_staging_table || ' AS');
+    DBMS_OUTPUT.PUT_LINE('SELECT * FROM ' || v_source_table || ' WHERE 1=0;');
     DBMS_OUTPUT.PUT_LINE('');
+    DBMS_OUTPUT.PUT_LINE('-- Add primary key constraint to match source table');
+    
+    -- Get primary key columns
+    FOR pk IN (
+        SELECT constraint_name
+        FROM user_constraints
+        WHERE table_name = v_source_table
+          AND constraint_type = 'P'
+    ) LOOP
+        v_col_list := '';
+        FOR col IN (
+            SELECT column_name
+            FROM user_cons_columns
+            WHERE constraint_name = pk.constraint_name
+              AND table_name = v_source_table
+            ORDER BY position
+        ) LOOP
+            IF v_col_list IS NOT NULL THEN
+                v_col_list := v_col_list || ', ';
+            END IF;
+            v_col_list := v_col_list || col.column_name;
+        END LOOP;
+        
+        IF v_col_list IS NOT NULL THEN
+            DBMS_OUTPUT.PUT_LINE('ALTER TABLE ' || v_staging_table);
+            DBMS_OUTPUT.PUT_LINE('ADD CONSTRAINT pk_staging_temp PRIMARY KEY (' || v_col_list || ');');
+        END IF;
+    END LOOP;
     DBMS_OUTPUT.PUT_LINE('');
     
     -- ========================================
