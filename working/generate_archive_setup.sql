@@ -100,9 +100,12 @@ BEGIN
     v_table_ddl := REPLACE(v_table_ddl, '"' || v_source_table || '"', '"' || v_archive_table || '"');
     v_table_ddl := REPLACE(v_table_ddl, ' ' || v_source_table || ' ', ' ' || v_archive_table || ' ');
     
-    -- Replace old partition name (e.g., SALES_OLD -> SALES_ARCHIVE_OLD)
+    -- Replace old partition name - handle both upper and lower case variations
+    -- e.g., SALES_OLD -> SNPARCH_SALES_OLD or sales_old -> snparch_sales_old
     v_table_ddl := REPLACE(v_table_ddl, '"' || v_source_table || '_OLD"', '"' || v_archive_table || '_OLD"');
+    v_table_ddl := REPLACE(v_table_ddl, '"' || LOWER(v_source_table) || '_old"', '"' || LOWER(v_archive_table) || '_old"');
     v_table_ddl := REPLACE(v_table_ddl, ' PARTITION ' || v_source_table || '_OLD ', ' PARTITION ' || v_archive_table || '_OLD ');
+    v_table_ddl := REPLACE(v_table_ddl, ' PARTITION ' || LOWER(v_source_table) || '_old ', ' PARTITION ' || LOWER(v_archive_table) || '_old ');
     
     DBMS_OUTPUT.PUT_LINE(v_table_ddl);
     DBMS_OUTPUT.PUT_LINE('');
@@ -130,8 +133,18 @@ BEGIN
                 v_constraint_ddl := DBMS_METADATA.GET_DDL('CONSTRAINT', con.constraint_name, USER);
                 v_constraint_ddl := REPLACE(v_constraint_ddl, '"' || v_source_table || '"', '"' || v_archive_table || '"');
                 v_constraint_ddl := REPLACE(v_constraint_ddl, ' ' || v_source_table || ' ', ' ' || v_archive_table || ' ');
-                v_constraint_ddl := REPLACE(v_constraint_ddl, '"' || con.constraint_name || '"', 
-                                           '"' || REPLACE(con.constraint_name, v_source_table, v_archive_table) || '"');
+                
+                -- Replace constraint name - handle various naming patterns
+                IF INSTR(con.constraint_name, v_source_table) > 0 THEN
+                    -- Constraint name contains table name
+                    v_constraint_ddl := REPLACE(v_constraint_ddl, '"' || con.constraint_name || '"', 
+                                               '"' || REPLACE(con.constraint_name, v_source_table, v_archive_table) || '"');
+                ELSE
+                    -- Constraint name doesn't contain table name, keep original name
+                    -- (This is fine as constraint names are schema-unique)
+                    NULL;
+                END IF;
+                
                 DBMS_OUTPUT.PUT_LINE(v_constraint_ddl);
             EXCEPTION
                 WHEN OTHERS THEN
@@ -161,9 +174,23 @@ BEGIN
             BEGIN
                 v_index_ddl := DBMS_METADATA.GET_DDL('INDEX', idx.index_name, USER);
                 v_index_ddl := REPLACE(v_index_ddl, '"' || v_source_table || '"', '"' || v_archive_table || '"');
-                v_index_ddl := REPLACE(v_index_ddl, ' ' || v_source_table || ' ', ' ' || v_archive_table || ' ');
-                v_index_ddl := REPLACE(v_index_ddl, '"' || idx.index_name || '"', 
-                                      '"' || REPLACE(idx.index_name, v_source_table, v_archive_table) || '"');
+                v_index_ddl := REPLACE(v_index_ddl, ' ON ' || v_source_table || ' ', ' ON ' || v_archive_table || ' ');
+                v_index_ddl := REPLACE(v_index_ddl, ' ON ' || v_source_table || '(', ' ON ' || v_archive_table || '(');
+                
+                -- Replace index name: e.g., IDX_SALES_DATE -> IDX_SNPARCH_SALES_DATE
+                -- Extract prefix and suffix from original index name
+                IF idx.index_name LIKE 'IDX_%' || v_source_table || '%' THEN
+                    v_index_ddl := REPLACE(v_index_ddl, '"' || idx.index_name || '"', 
+                                          '"' || REPLACE(idx.index_name, v_source_table, v_archive_table) || '"');
+                ELSIF idx.index_name LIKE '%' || v_source_table || '%' THEN
+                    v_index_ddl := REPLACE(v_index_ddl, '"' || idx.index_name || '"', 
+                                          '"' || REPLACE(idx.index_name, v_source_table, v_archive_table) || '"');
+                ELSE
+                    -- If index name doesn't contain table name, prefix with archive table
+                    v_index_ddl := REPLACE(v_index_ddl, '"' || idx.index_name || '"', 
+                                          '"IDX_' || v_archive_table || '_' || idx.index_name || '"');
+                END IF;
+                
                 DBMS_OUTPUT.PUT_LINE(v_index_ddl);
             EXCEPTION
                 WHEN OTHERS THEN
@@ -218,7 +245,7 @@ BEGIN
         
         IF v_col_list IS NOT NULL THEN
             DBMS_OUTPUT.PUT_LINE('ALTER TABLE ' || v_staging_table);
-            DBMS_OUTPUT.PUT_LINE('ADD CONSTRAINT pk_staging_temp PRIMARY KEY (' || v_col_list || ');');
+            DBMS_OUTPUT.PUT_LINE('ADD CONSTRAINT pk_' || LOWER(v_staging_table) || ' PRIMARY KEY (' || v_col_list || ');');
         END IF;
     END LOOP;
     DBMS_OUTPUT.PUT_LINE('');
