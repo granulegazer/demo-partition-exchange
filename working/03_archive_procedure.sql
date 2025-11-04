@@ -91,10 +91,39 @@ CREATE OR REPLACE PROCEDURE archive_partitions_by_dates (
     e_config_not_found EXCEPTION;
     e_config_inactive EXCEPTION;
     e_invalid_indexes_found EXCEPTION;
+    e_table_not_partitioned EXCEPTION;
+    
+    -- Validation variables
+    v_partitioned VARCHAR2(3);
     
 BEGIN
     v_execution_start := SYSTIMESTAMP;
     v_step := 1;
+    
+    -- Check if source table is partitioned
+    BEGIN
+        SELECT partitioned
+        INTO v_partitioned
+        FROM user_tables
+        WHERE table_name = UPPER(p_table_name);
+        
+        IF v_partitioned != 'YES' THEN
+            prc_log_error_autonomous(v_proc_name, 'E', v_step, NULL, NULL, 
+                'Table is not partitioned', 'Table: ' || p_table_name, USER);
+            RAISE e_table_not_partitioned;
+        END IF;
+        
+        prc_log_error_autonomous(v_proc_name, 'I', v_step, NULL, NULL, 
+            'Verified table is partitioned', 'Table: ' || p_table_name, USER);
+            
+    EXCEPTION
+        WHEN NO_DATA_FOUND THEN
+            prc_log_error_autonomous(v_proc_name, 'E', v_step, NULL, NULL, 
+                'Table does not exist', 'Table: ' || p_table_name, USER);
+            RAISE_APPLICATION_ERROR(-20001, 'Table ' || p_table_name || ' does not exist');
+    END;
+    
+    v_step := v_step + 1;
     
     -- Get configuration for this table
     BEGIN
@@ -116,7 +145,8 @@ BEGIN
             v_compression_type
         FROM snparch_cnf_partition_archive
         WHERE source_table_name = UPPER(p_table_name)
-          AND archive_table_name IS NOT NULL;
+        AND staging_table_name IS NOT NULL
+        AND is_active = 'Y'
           
     EXCEPTION
         WHEN NO_DATA_FOUND THEN
@@ -171,7 +201,7 @@ BEGIN
           AND status != 'VALID';
           
         IF v_invalid_indexes > 0 THEN
-            prc_log_error_autonomous(v_proc_name, 'W', v_step, NULL, NULL, 
+            prc_log_error_autonomous(v_proc_name, 'E', v_step, NULL, NULL, 
                 'Invalid indexes found on source', 
                 'Table: ' || p_table_name || ', Count: ' || v_invalid_indexes, USER);
             DBMS_OUTPUT.PUT_LINE('WARNING: ' || v_invalid_indexes || ' invalid indexes found on ' || p_table_name);
@@ -207,7 +237,7 @@ BEGIN
           AND status != 'VALID';
           
         IF v_invalid_indexes > 0 THEN
-            prc_log_error_autonomous(v_proc_name, 'W', v_step, NULL, NULL, 
+            prc_log_error_autonomous(v_proc_name, 'E', v_step, NULL, NULL, 
                 'Invalid indexes found on archive', 
                 'Table: ' || v_archive_table_name || ', Count: ' || v_invalid_indexes, USER);
             DBMS_OUTPUT.PUT_LINE('WARNING: ' || v_invalid_indexes || ' invalid indexes found on ' || v_archive_table_name);
@@ -486,7 +516,7 @@ BEGIN
           AND status != 'VALID';
           
         IF v_invalid_indexes > 0 THEN
-            prc_log_error_autonomous(v_proc_name, 'W', v_step, NULL, NULL, 
+            prc_log_error_autonomous(v_proc_name, 'E', v_step, NULL, NULL, 
                 'Invalid indexes after exchange on source', 
                 'Table: ' || p_table_name || ', Count: ' || v_invalid_indexes, USER);
             DBMS_OUTPUT.PUT_LINE('WARNING: ' || v_invalid_indexes || ' invalid indexes on ' || p_table_name);
@@ -504,7 +534,7 @@ BEGIN
           AND status != 'VALID';
           
         IF v_invalid_indexes > 0 THEN
-            prc_log_error_autonomous(v_proc_name, 'W', v_step, NULL, NULL, 
+            prc_log_error_autonomous(v_proc_name, 'E', v_step, NULL, NULL, 
                 'Invalid indexes after exchange on archive', 
                 'Table: ' || v_archive_table_name || ', Count: ' || v_invalid_indexes, USER);
             DBMS_OUTPUT.PUT_LINE('WARNING: ' || v_invalid_indexes || ' invalid indexes on ' || v_archive_table_name);
@@ -595,6 +625,11 @@ BEGIN
     DBMS_OUTPUT.PUT_LINE('===========================================');
     
 EXCEPTION
+    WHEN e_table_not_partitioned THEN
+        DBMS_OUTPUT.PUT_LINE('ERROR: Table ' || p_table_name || ' is not partitioned');
+        DBMS_OUTPUT.PUT_LINE('This procedure only works with partitioned tables');
+        RAISE_APPLICATION_ERROR(-20002, 'Table ' || p_table_name || ' is not partitioned');
+        
     WHEN e_config_not_found THEN
         DBMS_OUTPUT.PUT_LINE('ERROR: Configuration not found for table ' || p_table_name);
         DBMS_OUTPUT.PUT_LINE('Please add configuration to PARTITION_ARCHIVE_CONFIG table');
