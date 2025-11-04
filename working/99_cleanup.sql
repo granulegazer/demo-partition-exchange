@@ -1,5 +1,6 @@
 -- ========================================
 -- CLEANUP SCRIPTS
+-- Oracle 19.26 Compatible
 -- ========================================
 
 -- Step 1: Drop the view
@@ -7,6 +8,9 @@ DROP VIEW sales_complete;
 
 -- Step 2: Drop helper function
 DROP FUNCTION get_date_list;
+
+-- Step 2a: Drop partition name function
+DROP FUNCTION get_partition_name_by_date;
 
 -- Step 3: Drop archive procedure
 DROP PROCEDURE archive_partitions_by_dates;
@@ -17,6 +21,8 @@ DROP TYPE date_array_type;
 -- Step 5: Drop tables
 DROP TABLE sales PURGE;
 DROP TABLE sales_archive PURGE;
+DROP TABLE snparch_cnf_partition_archive PURGE;
+DROP TABLE snparch_ctl_execution_log PURGE;
 
 -- Step 6: Verify all objects are dropped
 SELECT object_name, object_type 
@@ -25,7 +31,10 @@ WHERE object_name IN (
     'SALES',
     'SALES_ARCHIVE',
     'SALES_COMPLETE',
+    'SNPARCH_CNF_PARTITION_ARCHIVE',
+    'SNPARCH_CTL_EXECUTION_LOG',
     'GET_DATE_LIST',
+    'GET_PARTITION_NAME_BY_DATE',
     'ARCHIVE_PARTITIONS_BY_DATES',
     'DATE_ARRAY_TYPE'
 );
