@@ -86,29 +86,6 @@ COMMENT ON COLUMN snparch_cnf_partition_archive.gather_stats_after_exchange IS '
 COMMENT ON COLUMN snparch_cnf_partition_archive.enable_compression IS 'Y/N flag to enable compression on archived partitions';
 COMMENT ON COLUMN snparch_cnf_partition_archive.compression_type IS 'Compression type: BASIC, OLTP, QUERY LOW/HIGH, ARCHIVE LOW/HIGH';
 
--- Insert configuration for SALES table
-INSERT INTO snparch_cnf_partition_archive (
-    source_table_name,
-    archive_table_name,
-    staging_table_name,
-    is_active,
-    validate_before_exchange,
-    gather_stats_after_exchange,
-    enable_compression,
-    compression_type
-) VALUES (
-    'SALES',
-    'SALES_ARCHIVE',
-    'SALES_STAGING_TEMP',
-    'Y',
-    'Y',
-    'Y',
-    'N',
-    NULL
-);
-
-COMMIT;
-
 -- ========================================
 -- EXECUTION LOG TABLE (CONTROL TABLE)
 -- ========================================

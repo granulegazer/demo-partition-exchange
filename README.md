@@ -40,10 +40,11 @@ SQL> @00_run_all.sql
 
 # Or run individually
 SQL> @01_setup.sql
-SQL> @02_data_generator.sql
-SQL> @03_archive_procedure.sql
-SQL> @04_test_scenarios.sql
-SQL> @05_monitoring_queries.sql
+SQL> @02_config_data.sql
+SQL> @03_data_generator.sql
+SQL> @04_archive_procedure.sql
+SQL> @05_test_scenarios.sql
+SQL> @06_monitoring_queries.sql
 ```
 
 ## Architecture Overview
@@ -252,7 +253,7 @@ COMMIT;
 Run the test scenarios:
 
 ```sql
-SQL> @04_test_scenarios.sql
+SQL> @05_test_scenarios.sql
 ```
 
 This includes:
@@ -264,7 +265,7 @@ This includes:
 View monitoring queries:
 
 ```sql
-SQL> @05_monitoring_queries.sql
+SQL> @06_monitoring_queries.sql
 ```
 
 Displays:
