@@ -7,6 +7,46 @@ CREATE OR REPLACE FUNCTION get_partition_name_by_date(
     p_date IN DATE
 ) RETURN VARCHAR2
 IS
+/*
+    Function: get_partition_name_by_date
+    
+    Purpose:
+        Retrieves the partition name for a given date from a partitioned table.
+        Searches through all partitions and finds the one containing the specified date
+        based on partition high_value boundaries.
+    
+    Parameters:
+        p_table_name (IN VARCHAR2) - Name of the partitioned table to search
+        p_date (IN DATE)           - Date to find the corresponding partition for
+    
+    Returns:
+        VARCHAR2 - Name of the partition containing the specified date
+                   NULL if no partition found
+    
+    Logic:
+        1. Queries user_tab_partitions for the specified table
+        2. Iterates through partitions in order (by partition_position)
+        3. For each partition, evaluates the high_value boundary:
+           - MAXVALUE partitions are treated as 9999-12-31
+           - Other partitions: executes high_value expression to get boundary date
+        4. Returns partition name when p_date < high_value (exclusive boundary)
+    
+    Notes:
+        - Partition high_value is an EXCLUSIVE boundary
+        - MAXVALUE partitions are treated specially
+        - Returns NULL if date doesn't fall in any partition
+    
+    Example Usage:
+        v_partition := get_partition_name_by_date('SALES', DATE '2024-01-15');
+        -- Returns: 'SYS_P123' or 'SALES_20240115' depending on partition naming
+    
+    Error Handling:
+        - Returns NULL on any error
+        - Outputs error message to DBMS_OUTPUT
+    
+    Dependencies:
+        - Requires SELECT privilege on USER_TAB_PARTITIONS
+*/
     v_partition_name VARCHAR2(128);
     v_high_value_str VARCHAR2(32767);
     v_high_value_date DATE;
@@ -50,6 +90,150 @@ CREATE OR REPLACE PROCEDURE archive_partitions_by_dates (
     p_table_name IN VARCHAR2,
     p_dates IN date_array_type
 ) AS
+/*
+    Procedure: archive_partitions_by_dates
+    
+    Purpose:
+        Archives partitions from a source table to an archive table using partition exchange.
+        Processes multiple dates in a single execution with comprehensive logging and validation.
+        Uses two-step exchange process: Source → Staging → Archive (both metadata-only operations).
+    
+    Parameters:
+        p_table_name (IN VARCHAR2)        - Name of source partitioned table to archive from
+        p_dates (IN date_array_type)      - Collection of dates to archive (one partition per date)
+    
+    Configuration:
+        Reads settings from SNPARCH_CNF_PARTITION_ARCHIVE table:
+        - archive_table_name:           Target archive table name
+        - staging_table_name:           Temporary staging table name template
+        - is_active:                    Y/N to enable/disable archival
+        - validate_before_exchange:     Y/N to validate indexes before exchange
+        - gather_stats_after_exchange:  Y/N to gather statistics after exchange
+        - enable_compression:           Y/N compression flag
+        - compression_type:             Type of compression (BASIC, OLTP, QUERY, ARCHIVE)
+    
+    Process Flow:
+        1. Validation Phase:
+           - Verify table exists and is partitioned
+           - Load configuration from SNPARCH_CNF_PARTITION_ARCHIVE
+           - Check configuration is active
+           - Optionally validate indexes (if validate_before_exchange = Y)
+        
+        2. Pre-Exchange Metrics Collection:
+           - Count records in source and archive tables
+           - Get index counts and sizes
+           - Count invalid indexes
+        
+        3. Partition Exchange (for each date):
+           a. Find partition name for the date
+           b. Create staging table (CTAS with WHERE 1=0)
+           c. Add primary key to staging table
+           d. Exchange source partition → staging table (INSTANT)
+           e. Exchange staging table → archive partition (INSTANT)
+           f. Collect post-exchange metrics
+           g. Validate data integrity (record counts)
+           h. Drop staging table
+           i. Drop empty source partition
+        
+        4. Post-Exchange Actions:
+           - Validate index status (if validate_before_exchange = Y)
+           - Gather statistics (if gather_stats_after_exchange = Y)
+           - Log execution details to SNPARCH_CTL_EXECUTION_LOG
+        
+        5. Final Summary:
+           - Display completion statistics
+           - Show before/after table stats
+    
+    Execution Logging (SNPARCH_CTL_EXECUTION_LOG):
+        Records comprehensive metrics for each partition exchange:
+        - Partition names (source and archive)
+        - Partition date and size
+        - Record counts (before/after for both tables)
+        - Index counts and sizes
+        - Invalid index counts (before/after)
+        - Data validation status (PASS/FAIL)
+        - Compression information
+        - Performance metrics (exchange duration, stats duration, total duration)
+        - Status (SUCCESS/WARNING/ERROR)
+    
+    Data Validation:
+        Automatically validates data integrity after exchange:
+        - Checks: source_records_before - source_records_after == records_moved
+        - Checks: archive_records_after - archive_records_before == records_moved
+        - Sets data_validation_status to FAIL if mismatch detected
+        - Sets overall status to WARNING if validation fails
+    
+    Error Handling:
+        - Graceful handling of missing partitions (logs warning, continues with remaining dates)
+        - Invalid indexes are automatically rebuilt before exchange
+        - Staging table cleanup in exception handler
+        - Detailed error logging via prc_log_error_autonomous
+        - Specific exceptions for common errors:
+          * e_table_not_partitioned: Source table is not partitioned
+          * e_config_not_found: No configuration found
+          * e_config_inactive: Configuration exists but is inactive
+    
+    Performance Considerations:
+        - Both exchange operations are INSTANT (metadata-only)
+        - WITHOUT VALIDATION clause for faster exchange
+        - Statistics gathering uses AUTO_DEGREE for parallelism
+        - Index validation optional to reduce overhead
+    
+    Dependencies:
+        - Function: get_partition_name_by_date
+        - Procedure: prc_log_error_autonomous
+        - Function: f_degrag_get_table_size_stats_util
+        - Table: SNPARCH_CNF_PARTITION_ARCHIVE (configuration)
+        - Table: SNPARCH_CTL_EXECUTION_LOG (logging)
+        - Type: date_array_type (collection of dates)
+    
+    Example Usage:
+        -- Archive single date
+        BEGIN
+            archive_partitions_by_dates(
+                p_table_name => 'SALES',
+                p_dates => date_array_type(DATE '2024-01-15')
+            );
+        END;
+        /
+        
+        -- Archive multiple dates
+        BEGIN
+            archive_partitions_by_dates(
+                p_table_name => 'SALES',
+                p_dates => date_array_type(
+                    DATE '2024-01-01',
+                    DATE '2024-01-02',
+                    DATE '2024-01-03'
+                )
+            );
+        END;
+        /
+    
+    Output (DBMS_OUTPUT):
+        - Configuration details
+        - Before/after table statistics
+        - Processing status for each date
+        - Partition exchange confirmations
+        - Data validation results
+        - Index validation results
+        - Statistics gathering confirmation
+        - Final summary with totals
+    
+    Notes:
+        - Source partitions are DROPPED after successful exchange
+        - Archive partitions are created automatically if they don't exist
+        - No physical data movement - both exchanges are metadata operations
+        - Indexes are exchanged automatically with partitions
+        - LOCAL indexes become regular indexes on staging, then back to LOCAL on archive
+        - Transaction committed after each date to avoid long-running transactions
+    
+    Version History:
+        - Oracle 19.26: Optimized with IDENTITY columns, TIMESTAMP(6), enhanced metrics
+        - Added comprehensive data validation
+        - Added index size tracking
+        - Added before/after record count validation
+*/
     -- Configuration variables
     v_archive_table_name VARCHAR2(128);
     v_staging_table VARCHAR2(128);
@@ -70,7 +254,7 @@ CREATE OR REPLACE PROCEDURE archive_partitions_by_dates (
     v_proc_name VARCHAR2(30) := 'ARCHIVE_PARTITIONS';
     v_stats VARCHAR2(4000);
     
-    -- Execution logging variables (Oracle 19c)
+    -- Execution logging variables (Oracle 19.26)
     v_execution_start TIMESTAMP(6);
     v_execution_end TIMESTAMP(6);
     v_exchange_start TIMESTAMP(6);
@@ -79,9 +263,26 @@ CREATE OR REPLACE PROCEDURE archive_partitions_by_dates (
     v_stats_end TIMESTAMP(6);
     v_exchange_duration NUMBER;
     v_stats_duration NUMBER;
+    v_total_duration NUMBER;
     v_partition_size_mb NUMBER(12,2);
     v_is_compressed VARCHAR2(1);
     v_compression_ratio NUMBER(5,2);
+    
+    -- Index tracking variables
+    v_source_index_count NUMBER;
+    v_archive_index_count NUMBER;
+    v_source_index_size_mb NUMBER(12,2);
+    v_archive_index_size_mb NUMBER(12,2);
+    v_invalid_indexes_before NUMBER := 0;
+    v_invalid_indexes_after NUMBER := 0;
+    
+    -- Data validation variables
+    v_data_validation_status VARCHAR2(20);
+    v_record_count_match VARCHAR2(1);
+    v_source_records_before NUMBER;
+    v_source_records_after NUMBER;
+    v_archive_records_before NUMBER;
+    v_archive_records_after NUMBER;
     
     -- Validation variables
     v_invalid_indexes NUMBER;
@@ -315,6 +516,44 @@ BEGIN
             DBMS_OUTPUT.PUT_LINE('Records found: ' || v_count);
             
             IF v_count > 0 THEN
+                -- Collect metrics BEFORE exchange
+                v_step := v_step + 1;
+                
+                -- Get source table record count
+                EXECUTE IMMEDIATE 'SELECT COUNT(*) FROM ' || p_table_name INTO v_source_records_before;
+                
+                -- Get archive table record count
+                EXECUTE IMMEDIATE 'SELECT COUNT(*) FROM ' || v_archive_table_name INTO v_archive_records_before;
+                
+                -- Get source index information
+                SELECT COUNT(*), NVL(SUM(ROUND(bytes/1024/1024, 2)), 0)
+                INTO v_source_index_count, v_source_index_size_mb
+                FROM user_segments
+                WHERE segment_name IN (
+                    SELECT index_name FROM user_indexes WHERE table_name = UPPER(p_table_name)
+                );
+                
+                -- Get archive index information
+                SELECT COUNT(*), NVL(SUM(ROUND(bytes/1024/1024, 2)), 0)
+                INTO v_archive_index_count, v_archive_index_size_mb
+                FROM user_segments
+                WHERE segment_name IN (
+                    SELECT index_name FROM user_indexes WHERE table_name = UPPER(v_archive_table_name)
+                );
+                
+                -- Count invalid indexes before
+                SELECT COUNT(*)
+                INTO v_invalid_indexes_before
+                FROM user_indexes
+                WHERE table_name IN (UPPER(p_table_name), UPPER(v_archive_table_name))
+                  AND status != 'VALID';
+                
+                prc_log_error_autonomous(v_proc_name, 'I', v_step, NULL, NULL, 
+                    'Before metrics collected', 
+                    'Src Recs: ' || v_source_records_before || ', Arc Recs: ' || v_archive_records_before || 
+                    ', Src Idx: ' || v_source_index_count || ', Invalid Idx: ' || v_invalid_indexes_before, 
+                    USER);
+                
                 -- Create temporary staging table from template
                 v_step := v_step + 1;
                 v_sql := 'CREATE TABLE ' || v_staging_table || 
@@ -392,7 +631,7 @@ BEGIN
                 
                 DBMS_OUTPUT.PUT_LINE('Step 2: Data moved to archive (instant)');
                 
-                -- Get partition size (Oracle 19c optimized query)
+                -- Get partition size (Oracle 19.26 optimized query)
                 BEGIN
                     SELECT ROUND(bytes / 1024 / 1024, 2)
                     INTO v_partition_size_mb
@@ -405,7 +644,7 @@ BEGIN
                         v_partition_size_mb := NULL;
                 END;
                 
-                -- Check if partition is compressed (Oracle 19c)
+                -- Check if partition is compressed (Oracle 19.26)
                 BEGIN
                     SELECT 
                         CASE WHEN compression = 'ENABLED' THEN 'Y' ELSE 'N' END,
@@ -423,6 +662,57 @@ BEGIN
                 END;
                 
                 v_total_archived := v_total_archived + v_count;
+                
+                -- Collect metrics AFTER exchange
+                v_step := v_step + 1;
+                
+                -- Get source table record count after exchange
+                EXECUTE IMMEDIATE 'SELECT COUNT(*) FROM ' || p_table_name INTO v_source_records_after;
+                
+                -- Get archive table record count after exchange
+                EXECUTE IMMEDIATE 'SELECT COUNT(*) FROM ' || v_archive_table_name INTO v_archive_records_after;
+                
+                -- Count invalid indexes after
+                SELECT COUNT(*)
+                INTO v_invalid_indexes_after
+                FROM user_indexes
+                WHERE table_name IN (UPPER(p_table_name), UPPER(v_archive_table_name))
+                  AND status != 'VALID';
+                
+                -- Validate data integrity
+                v_data_validation_status := 'PASS';
+                v_record_count_match := 'Y';
+                
+                -- Check if records moved correctly
+                IF v_source_records_before - v_source_records_after != v_count THEN
+                    v_data_validation_status := 'FAIL';
+                    v_record_count_match := 'N';
+                    prc_log_error_autonomous(v_proc_name, 'E', v_step, NULL, NULL, 
+                        'Source record count mismatch', 
+                        'Expected: ' || v_count || ', Actual: ' || (v_source_records_before - v_source_records_after), 
+                        USER);
+                END IF;
+                
+                IF v_archive_records_after - v_archive_records_before != v_count THEN
+                    v_data_validation_status := 'FAIL';
+                    v_record_count_match := 'N';
+                    prc_log_error_autonomous(v_proc_name, 'E', v_step, NULL, NULL, 
+                        'Archive record count mismatch', 
+                        'Expected: ' || v_count || ', Actual: ' || (v_archive_records_after - v_archive_records_before), 
+                        USER);
+                END IF;
+                
+                prc_log_error_autonomous(v_proc_name, 'I', v_step, NULL, NULL, 
+                    'After metrics collected', 
+                    'Src Recs: ' || v_source_records_after || ', Arc Recs: ' || v_archive_records_after || 
+                    ', Invalid Idx: ' || v_invalid_indexes_after || ', Data Val: ' || v_data_validation_status, 
+                    USER);
+                
+                DBMS_OUTPUT.PUT_LINE('Data Validation: ' || v_data_validation_status);
+                DBMS_OUTPUT.PUT_LINE('Source Records: ' || v_source_records_before || ' -> ' || v_source_records_after || 
+                                   ' (Moved: ' || (v_source_records_before - v_source_records_after) || ')');
+                DBMS_OUTPUT.PUT_LINE('Archive Records: ' || v_archive_records_before || ' -> ' || v_archive_records_after || 
+                                   ' (Added: ' || (v_archive_records_after - v_archive_records_before) || ')');
                 
                 -- Drop staging table
                 v_step := v_step + 1;
@@ -442,8 +732,11 @@ BEGIN
             
             DBMS_OUTPUT.PUT_LINE('Dropped partition: ' || v_partition_name);
             
-            -- Log execution to control table (Oracle 19c with identity column)
+            -- Log execution to control table (Oracle 19.26 with IDENTITY column)
             v_step := v_step + 1;
+            v_total_duration := EXTRACT(SECOND FROM (SYSTIMESTAMP - v_exchange_start)) +
+                               EXTRACT(MINUTE FROM (SYSTIMESTAMP - v_exchange_start)) * 60;
+            
             INSERT INTO snparch_ctl_execution_log (
                 execution_date,
                 source_table_name,
@@ -453,11 +746,24 @@ BEGIN
                 partition_date,
                 records_archived,
                 partition_size_mb,
+                source_index_count,
+                archive_index_count,
+                source_index_size_mb,
+                archive_index_size_mb,
+                invalid_indexes_before,
+                invalid_indexes_after,
+                data_validation_status,
+                record_count_match,
+                source_records_before,
+                source_records_after,
+                archive_records_before,
+                archive_records_after,
                 is_compressed,
                 compression_type,
                 compression_ratio,
                 exchange_duration_seconds,
                 stats_gather_duration_seconds,
+                total_duration_seconds,
                 validation_status,
                 executed_by
             ) VALUES (
@@ -469,12 +775,25 @@ BEGIN
                 p_dates(i),
                 v_count,
                 v_partition_size_mb,
+                v_source_index_count,
+                v_archive_index_count,
+                v_source_index_size_mb,
+                v_archive_index_size_mb,
+                v_invalid_indexes_before,
+                v_invalid_indexes_after,
+                v_data_validation_status,
+                v_record_count_match,
+                v_source_records_before,
+                v_source_records_after,
+                v_archive_records_before,
+                v_archive_records_after,
                 v_is_compressed,
                 v_compression_type,
                 NULL,  -- Compression ratio calculated separately if needed
                 v_exchange_duration,
                 NULL,  -- Will be updated after stats gathering
-                'SUCCESS',
+                v_total_duration,
+                CASE WHEN v_data_validation_status = 'FAIL' THEN 'WARNING' ELSE 'SUCCESS' END,
                 USER
             );
             
@@ -554,7 +873,7 @@ BEGIN
         prc_log_error_autonomous(v_proc_name, 'I', v_step, NULL, NULL, 
             'Gathering statistics', 'Table: ' || p_table_name, USER);
             
-        -- Oracle 19c optimized statistics gathering
+        -- Oracle 19.26 optimized statistics gathering with AUTO features
         DBMS_STATS.GATHER_TABLE_STATS(
             ownname => USER,
             tabname => UPPER(p_table_name),
@@ -572,7 +891,7 @@ BEGIN
         prc_log_error_autonomous(v_proc_name, 'I', v_step, NULL, NULL, 
             'Gathering statistics', 'Table: ' || v_archive_table_name, USER);
             
-        -- Oracle 19c optimized statistics gathering
+        -- Oracle 19.26 optimized statistics gathering with AUTO features
         DBMS_STATS.GATHER_TABLE_STATS(
             ownname => USER,
             tabname => UPPER(v_archive_table_name),

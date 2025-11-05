@@ -101,19 +101,47 @@ CREATE TABLE snparch_ctl_execution_log (
     partition_date DATE NOT NULL,
     records_archived NUMBER NOT NULL,
     partition_size_mb NUMBER(12,2),
+    
+    -- Index information
+    source_index_count NUMBER,
+    archive_index_count NUMBER,
+    source_index_size_mb NUMBER(12,2),
+    archive_index_size_mb NUMBER(12,2),
+    invalid_indexes_before NUMBER DEFAULT 0,
+    invalid_indexes_after NUMBER DEFAULT 0,
+    
+    -- Validation details
+    data_validation_status VARCHAR2(20),
+    record_count_match VARCHAR2(1) DEFAULT 'Y',
+    source_records_before NUMBER,
+    source_records_after NUMBER,
+    archive_records_before NUMBER,
+    archive_records_after NUMBER,
+    
+    -- Compression information
     is_compressed VARCHAR2(1) DEFAULT 'N' NOT NULL,
     compression_type VARCHAR2(30),
     compression_ratio NUMBER(5,2),
+    
+    -- Performance metrics
     exchange_duration_seconds NUMBER(10,3),
     stats_gather_duration_seconds NUMBER(10,3),
+    total_duration_seconds NUMBER(10,3),
+    
+    -- Status and error handling
     validation_status VARCHAR2(20) DEFAULT 'SUCCESS' NOT NULL,
     error_code NUMBER,
     error_message VARCHAR2(4000),
+    
+    -- Audit fields
     executed_by VARCHAR2(128) DEFAULT USER NOT NULL,
     session_id NUMBER DEFAULT SYS_CONTEXT('USERENV', 'SESSIONID'),
+    
     CONSTRAINT pk_snparch_ctl_exec_log PRIMARY KEY (execution_id),
     CONSTRAINT chk_snparch_compressed CHECK (is_compressed IN ('Y', 'N')),
-    CONSTRAINT chk_snparch_val_status CHECK (validation_status IN ('SUCCESS', 'WARNING', 'ERROR'))
+    CONSTRAINT chk_snparch_val_status CHECK (validation_status IN ('SUCCESS', 'WARNING', 'ERROR')),
+    CONSTRAINT chk_snparch_data_val CHECK (data_validation_status IN ('PASS', 'FAIL', 'SKIPPED', NULL)),
+    CONSTRAINT chk_snparch_rec_match CHECK (record_count_match IN ('Y', 'N', NULL))
 ) SEGMENT CREATION IMMEDIATE;
 
 -- Create indexes for common queries (Oracle 19c optimized)
@@ -131,11 +159,24 @@ COMMENT ON COLUMN snparch_ctl_execution_log.archive_partition_name IS 'Name of a
 COMMENT ON COLUMN snparch_ctl_execution_log.partition_date IS 'Business date of the partition data';
 COMMENT ON COLUMN snparch_ctl_execution_log.records_archived IS 'Number of records moved to archive';
 COMMENT ON COLUMN snparch_ctl_execution_log.partition_size_mb IS 'Size of partition in megabytes';
+COMMENT ON COLUMN snparch_ctl_execution_log.source_index_count IS 'Number of indexes on source table';
+COMMENT ON COLUMN snparch_ctl_execution_log.archive_index_count IS 'Number of indexes on archive table';
+COMMENT ON COLUMN snparch_ctl_execution_log.source_index_size_mb IS 'Total size of indexes on source table in MB';
+COMMENT ON COLUMN snparch_ctl_execution_log.archive_index_size_mb IS 'Total size of indexes on archive table in MB';
+COMMENT ON COLUMN snparch_ctl_execution_log.invalid_indexes_before IS 'Number of invalid indexes before exchange';
+COMMENT ON COLUMN snparch_ctl_execution_log.invalid_indexes_after IS 'Number of invalid indexes after exchange';
+COMMENT ON COLUMN snparch_ctl_execution_log.data_validation_status IS 'Data validation result: PASS, FAIL, SKIPPED';
+COMMENT ON COLUMN snparch_ctl_execution_log.record_count_match IS 'Y if record counts match after exchange, N otherwise';
+COMMENT ON COLUMN snparch_ctl_execution_log.source_records_before IS 'Record count in source table before exchange';
+COMMENT ON COLUMN snparch_ctl_execution_log.source_records_after IS 'Record count in source table after exchange';
+COMMENT ON COLUMN snparch_ctl_execution_log.archive_records_before IS 'Record count in archive table before exchange';
+COMMENT ON COLUMN snparch_ctl_execution_log.archive_records_after IS 'Record count in archive table after exchange';
 COMMENT ON COLUMN snparch_ctl_execution_log.is_compressed IS 'Y if partition is compressed in archive, N otherwise';
 COMMENT ON COLUMN snparch_ctl_execution_log.compression_type IS 'Type of compression applied (BASIC, OLTP, QUERY, ARCHIVE)';
 COMMENT ON COLUMN snparch_ctl_execution_log.compression_ratio IS 'Compression ratio achieved (if compressed)';
 COMMENT ON COLUMN snparch_ctl_execution_log.exchange_duration_seconds IS 'Duration of partition exchange operation in seconds';
 COMMENT ON COLUMN snparch_ctl_execution_log.stats_gather_duration_seconds IS 'Duration of statistics gathering in seconds';
+COMMENT ON COLUMN snparch_ctl_execution_log.total_duration_seconds IS 'Total duration of entire archival operation in seconds';
 COMMENT ON COLUMN snparch_ctl_execution_log.validation_status IS 'Status: SUCCESS, WARNING, or ERROR';
 COMMENT ON COLUMN snparch_ctl_execution_log.error_code IS 'Oracle error code if operation failed';
 COMMENT ON COLUMN snparch_ctl_execution_log.error_message IS 'Error message if operation failed';

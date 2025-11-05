@@ -1,16 +1,20 @@
 # Oracle Partition Exchange Demo
 
-A comprehensive demonstration of Oracle Database partition exchange methodology for efficient data archival using interval partitioning, compression, and execution tracking.
+A comprehensive demonstration of Oracle Database 19.26 partition exchange methodology for efficient data archival using interval partitioning, compression, and comprehensive execution tracking with data validation.
 
 ## Features
 
 - ✅ **Instant Data Archival** - Partition exchange (metadata-only operation)
 - ✅ **Configuration-Driven** - Centralized configuration table with audit trails
-- ✅ **Execution Logging** - Complete history of all partition exchanges
+- ✅ **Comprehensive Execution Logging** - Complete history with before/after metrics
+- ✅ **Data Validation** - Automatic record count verification after exchange
+- ✅ **Index Tracking** - Monitor index count and size before/after exchange
 - ✅ **Compression Support** - Multiple compression types (OLTP, QUERY, ARCHIVE)
-- ✅ **Automatic Validation** - Index and statistics validation before/after exchange
+- ✅ **Partition Validation** - Automatic check for partitioned tables
 - ✅ **Performance Metrics** - Track exchange duration and statistics gathering time
-- ✅ **Oracle 19c Optimized** - Uses latest syntax and features
+- ✅ **DDL Generator** - Automated setup script generation for new tables
+- ✅ **Oracle 19.26 Optimized** - Uses latest syntax and features
+- ✅ **Production-Ready** - Comprehensive inline documentation and error handling
 
 ## Quick Start
 
@@ -22,8 +26,10 @@ A comprehensive demonstration of Oracle Database partition exchange methodology 
   - CREATE TABLE
   - CREATE TYPE
   - CREATE PROCEDURE
+  - CREATE FUNCTION
   - CREATE VIEW
   - CREATE INDEX
+  - SELECT_CATALOG_ROLE (for DBMS_METADATA usage in DDL generator)
 
 ### Installation
 
@@ -38,13 +44,15 @@ sqlplus username/password@database
 # Run all scripts at once
 SQL> @00_run_all.sql
 
-# Or run individually
-SQL> @01_setup.sql
-SQL> @02_config_data.sql
-SQL> @03_data_generator.sql
-SQL> @04_archive_procedure.sql
-SQL> @05_test_scenarios.sql
-SQL> @06_monitoring_queries.sql
+# Or run individually in sequence
+SQL> @01_setup.sql                  -- Create tables, types, and objects
+SQL> @02_config_data.sql            -- Insert configuration data
+SQL> @03_data_generator.sql         -- Generate sample data
+SQL> @04_archive_procedure.sql      -- Create archival procedure and function
+SQL> @05_test_scenarios.sql         -- Run test scenarios
+SQL> @06_monitoring_queries.sql     -- View monitoring queries
+SQL> @07_unified_view.sql           -- Create unified data view
+SQL> @08_helper_functions.sql       -- Create utility functions
 ```
 
 ## Architecture Overview
@@ -73,17 +81,44 @@ Centralized configuration for partition archival with these controls:
 
 ### Execution Log Table (`SNPARCH_CTL_EXECUTION_LOG`)
 
-Tracks every partition exchange with:
+Tracks every partition exchange with comprehensive before/after metrics:
 
+**Basic Execution Details:**
+- Execution ID (IDENTITY column - auto-incrementing)
+- Execution date and timestamp
+- Source and archive table names
 - Source and archive partition names
-- Partition date and record count
+- Session ID and executed by user
+- Partition date and validation status
+
+**Data Metrics:**
 - Partition size in MB
-- Compression status and type
+- Records archived count
+- Source records before/after exchange
+- Archive records before/after exchange
+- Record count match status (Y/N)
+- Data validation status (PASS/FAIL)
+
+**Index Metrics:**
+- Source table index count
+- Archive table index count
+- Source table index size (MB)
+- Archive table index size (MB)
+- Invalid indexes before exchange count
+- Invalid indexes after exchange count
+
+**Performance Metrics:**
 - Exchange duration (seconds)
 - Statistics gathering duration (seconds)
-- Validation status (SUCCESS/WARNING/ERROR)
-- Error details (if failed)
-- Session ID and executed by user
+- Total duration (seconds)
+
+**Compression Details:**
+- Compression status (Y/N)
+- Compression type (BASIC/OLTP/QUERY/ARCHIVE)
+
+**Error Tracking:**
+- Error message (if failed)
+- Error stack (if failed)
 
 ### Partition Exchange Flow
 
@@ -98,27 +133,90 @@ Tracks every partition exchange with:
 
 Both exchanges are metadata-only operations - no physical data movement!
 
+## DDL Generator Tool
+
+The `generate_archive_setup.sql` script automates the creation of archive infrastructure for any partitioned table.
+
+### Features
+
+- **DBMS_METADATA Integration** - Uses Oracle's built-in DDL extraction for accuracy
+- **Automatic Naming** - Applies SNPARCH_* prefix to archive and staging tables
+- **Complete Structure** - Generates constraints, indexes, and partitions
+- **Configuration Ready** - Creates INSERT statement for config table
+- **Clean Output** - No schema names or storage parameters
+- **Index Alignment** - Automatically renames indexes to match archive table
+
+### Usage
+
+```sql
+SQL> @generate_archive_setup.sql
+Enter the source table name (default: SALES): ORDERS
+```
+
+### Generated Output
+
+1. **Archive Table DDL** - `SNPARCH_ORDERS`
+   - All columns from source table
+   - All constraints (renamed to match archive table)
+   - All indexes (renamed to match archive table)
+   - All partitions (renamed: source_old → archive_old)
+   - Same partition scheme as source
+
+2. **Staging Table DDL** - `ORDERS_STAGING`
+   - CTAS structure (CREATE TABLE AS SELECT ... WHERE 1=0)
+   - Unpartitioned (required for exchange)
+   - No indexes (added by procedure during exchange)
+
+3. **Configuration INSERT**
+   - Pre-populated with recommended settings
+   - Ready to execute after reviewing/customizing
+
+### Transform Parameters
+
+The generator uses these DBMS_METADATA settings:
+- `EMIT_SCHEMA` = FALSE (no schema names)
+- `SEGMENT_ATTRIBUTES` = FALSE (no tablespace clauses)
+- `STORAGE` = FALSE (no storage parameters)
+
 ## Repository Structure
 
 ```
 demo-partition-exchange/
-├── README.md                       # This file
+├── README.md                           # This file
 ├── .github/
-│   └── copilot-instructions.md     # AI coding guidelines
+│   └── copilot-instructions.md         # AI coding guidelines
 └── working/
-    ├── 00_run_all.sql              # Master script - runs all components
-    ├── 01_setup.sql                # Creates tables, indexes, config tables
-    ├── 02_data_generator.sql       # Generates sample data for testing
-    ├── 03_archive_procedure.sql    # Core archival procedure with logging
-    ├── 04_test_scenarios.sql       # Test cases including compression tests
-    ├── 05_monitoring_queries.sql   # Monitoring and execution history queries
-    ├── 06_unified_view.sql         # View combining active + archived data
-    ├── 07_helper_functions.sql     # Utility functions
-    ├── config_management.sql       # Configuration management scripts
-    └── 99_cleanup.sql              # Cleanup script
+    ├── 00_run_all.sql                  # Master script - runs all components
+    ├── 01_setup.sql                    # Creates tables, indexes, config tables
+    ├── 02_config_data.sql              # Configuration data INSERT statements
+    ├── 03_data_generator.sql           # Generates sample data for testing
+    ├── 04_archive_procedure.sql        # Core archival procedure with comprehensive logging
+    ├── 05_test_scenarios.sql           # Test cases including compression tests
+    ├── 06_monitoring_queries.sql       # Monitoring and execution history queries
+    ├── 07_unified_view.sql             # View combining active + archived data
+    ├── 08_helper_functions.sql         # Utility functions
+    ├── config_management.sql           # Configuration management scripts
+    ├── generate_archive_setup.sql      # DDL generator for new archive setups
+    └── 99_cleanup.sql                  # Cleanup script
 ```
 
 ## Usage Examples
+
+### Generate Archive Setup for New Table
+
+```sql
+-- Generate complete DDL setup for archiving a new table
+-- Creates archive table, staging table, and configuration INSERT
+SQL> @generate_archive_setup.sql
+
+-- When prompted, enter your source table name (e.g., ORDERS)
+-- The script generates:
+--   1. SNPARCH_ORDERS (archive table) - with all constraints, indexes, partitions
+--   2. ORDERS_STAGING (staging table) - unpartitioned CTAS structure
+--   3. INSERT statement for SNPARCH_CNF_PARTITION_ARCHIVE configuration
+
+-- Review and execute the generated DDL
+```
 
 ### Basic Archival
 
@@ -159,10 +257,10 @@ END;
 /
 ```
 
-### Check Execution History
+### Check Execution History with Detailed Metrics
 
 ```sql
--- Recent executions with performance metrics
+-- Recent executions with comprehensive metrics
 SELECT 
     execution_id,
     TO_CHAR(execution_date, 'YYYY-MM-DD HH24:MI:SS') AS executed_at,
@@ -170,26 +268,57 @@ SELECT
     archive_partition_name,
     records_archived,
     partition_size_mb,
+    source_index_count,
+    archive_index_count,
+    ROUND(source_index_size_mb, 2) AS src_idx_mb,
+    ROUND(archive_index_size_mb, 2) AS arch_idx_mb,
+    data_validation_status,
+    record_count_match,
     is_compressed,
     ROUND(exchange_duration_seconds, 3) AS exchange_sec,
     ROUND(stats_gather_duration_seconds, 2) AS stats_sec,
+    ROUND(total_duration_seconds, 2) AS total_sec,
     validation_status
 FROM snparch_ctl_execution_log
 ORDER BY execution_id DESC
 FETCH FIRST 10 ROWS ONLY;
+
+-- Check for data validation failures
+SELECT 
+    execution_id,
+    partition_date,
+    source_partition_name,
+    source_records_before,
+    source_records_after,
+    archive_records_before,
+    archive_records_after,
+    record_count_match,
+    data_validation_status,
+    validation_status
+FROM snparch_ctl_execution_log
+WHERE data_validation_status = 'FAIL'
+   OR record_count_match = 'N'
+ORDER BY execution_date DESC;
 ```
 
 ### Query Execution Summary
 
 ```sql
--- Summary by table
+-- Summary by table with index metrics
 SELECT 
     source_table_name,
     COUNT(*) AS total_exchanges,
     SUM(records_archived) AS total_records,
     ROUND(SUM(partition_size_mb), 2) AS total_size_mb,
+    ROUND(AVG(source_index_count), 1) AS avg_source_indexes,
+    ROUND(AVG(archive_index_count), 1) AS avg_archive_indexes,
+    ROUND(SUM(source_index_size_mb), 2) AS total_src_idx_mb,
+    ROUND(SUM(archive_index_size_mb), 2) AS total_arch_idx_mb,
     SUM(CASE WHEN is_compressed = 'Y' THEN 1 ELSE 0 END) AS compressed_partitions,
-    ROUND(AVG(exchange_duration_seconds), 3) AS avg_exchange_sec
+    SUM(CASE WHEN data_validation_status = 'PASS' THEN 1 ELSE 0 END) AS passed_validations,
+    SUM(CASE WHEN data_validation_status = 'FAIL' THEN 1 ELSE 0 END) AS failed_validations,
+    ROUND(AVG(exchange_duration_seconds), 3) AS avg_exchange_sec,
+    ROUND(AVG(total_duration_seconds), 2) AS avg_total_sec
 FROM snparch_ctl_execution_log
 GROUP BY source_table_name;
 ```
@@ -218,14 +347,34 @@ COMMIT;
 
 ## Key Features
 
-### Oracle 19c Optimizations
+### Oracle 19.26 Optimizations
 
 - **IDENTITY Columns** - Auto-incrementing PKs without sequences
 - **TIMESTAMP(6)** - Microsecond precision for accurate timing
 - **FETCH FIRST** - Modern row limiting (replaces ROWNUM)
 - **INTERVAL Literals** - Clean date arithmetic
-- **Enhanced DBMS_STATS** - AUTO_DEGREE and granularity options
+- **Enhanced DBMS_STATS** - AUTO_DEGREE, AUTO_SAMPLE_SIZE, and granularity options
 - **Compression Detection** - Automatic detection of partition compression status
+- **DBMS_METADATA** - Automated DDL extraction for archive setup generation
+- **LOCAL Index Exchange** - Automatic index segment exchange during partition exchange
+
+### Data Validation & Integrity
+
+- **Partition Validation** - Procedure checks if table is partitioned, throws exception if not
+- **Record Count Validation** - Automatic before/after comparison to detect data loss
+- **Index Health Tracking** - Monitor invalid indexes before and after exchange
+- **Data Validation Status** - PASS/FAIL indicator for each exchange
+- **Warning Status** - Validation failures change status to WARNING for manual review
+
+### Comprehensive Logging
+
+The archival procedure logs 38 columns per execution:
+- 4 before-exchange record counts (source/archive, before/after)
+- 6 index metrics (counts and sizes for source/archive)
+- 2 invalid index counts (before/after exchange)
+- Data validation results (PASS/FAIL, match Y/N)
+- 3 performance timers (exchange, stats, total duration)
+- Full error tracking and session details
 
 ### Performance Benefits
 
@@ -260,7 +409,9 @@ This includes:
 1. Single and multiple date archival
 2. Compression enabled tests
 3. Fast mode tests (no validation)
-4. Execution history verification
+4. Data validation verification
+5. Index tracking verification
+6. Execution history verification
 
 View monitoring queries:
 
@@ -270,10 +421,12 @@ SQL> @06_monitoring_queries.sql
 
 Displays:
 - Configuration status
-- Recent executions
-- Index health
+- Recent executions with all metrics
+- Index health (before/after)
 - Statistics status
 - Compression effectiveness
+- Data validation results
+- Performance metrics
 
 ## Cleanup
 
@@ -299,6 +452,9 @@ SQL> @99_cleanup.sql
 **Q: ORA-14098: index mismatch in ALTER TABLE EXCHANGE PARTITION**  
 **A:** Don't create indexes on the staging table manually. The procedure uses `WITHOUT VALIDATION` which exchanges index segments automatically from the partitioned tables.
 
+**Q: ORA-14019: partition bound element must be one of: DATE, DATETIME, INTERVAL, NUMBER, or VARCHAR2**  
+**A:** The table is not partitioned. The archival procedure now automatically validates this and throws a custom exception: `e_table_not_partitioned: The table is not partitioned. Partition exchange requires a partitioned table.`
+
 **Q: Why use a staging table instead of direct exchange?**  
 **A:** Direct exchange would swap data between source and archive. The staging table acts as an intermediary to move data from source → archive while maintaining the source table structure.
 
@@ -306,10 +462,26 @@ SQL> @99_cleanup.sql
 **A:** Query the execution log: `SELECT partition_date, is_compressed, compression_type, partition_size_mb FROM snparch_ctl_execution_log WHERE is_compressed = 'Y';`
 
 **Q: Can I archive multiple tables?**  
-**A:** Yes! Add each table to `SNPARCH_CNF_PARTITION_ARCHIVE` with its own configuration, then call the procedure with the appropriate `p_table_name`.
+**A:** Yes! Add each table to `SNPARCH_CNF_PARTITION_ARCHIVE` with its own configuration, then call the procedure with the appropriate `p_table_name`. Use `generate_archive_setup.sql` to create the archive table and configuration for each new table.
 
 **Q: What happens if the procedure fails mid-execution?**  
 **A:** The procedure logs errors to `SNPARCH_CTL_EXECUTION_LOG` with status='ERROR' and automatically cleans up the staging table. Check the `error_message` column for details.
+
+**Q: Why is my execution showing WARNING status?**  
+**A:** WARNING status indicates the partition exchange completed but data validation failed (record counts don't match before/after). Check the `data_validation_status`, `record_count_match`, and the before/after record count columns to investigate.
+
+**Q: How do I monitor index health during archival?**  
+**A:** The execution log tracks:
+- `source_index_count` / `archive_index_count` - number of indexes
+- `source_index_size_mb` / `archive_index_size_mb` - total index size
+- `invalid_indexes_before` / `invalid_indexes_after` - count of invalid indexes
+
+**Q: What if data validation keeps failing?**  
+**A:** Check for:
+1. Concurrent DML on source table during archival
+2. Triggers that might be modifying data
+3. Application code inserting into the partition being archived
+Consider adding a table lock or running archival during maintenance windows.
 
 ## Best Practices
 
@@ -319,25 +491,65 @@ SQL> @99_cleanup.sql
    gather_stats_after_exchange = 'Y'
    ```
 
-2. **Use appropriate compression for your use case**
+2. **Monitor data validation results**
+   ```sql
+   -- Check for validation failures
+   SELECT execution_id, partition_date, data_validation_status, 
+          record_count_match, validation_status
+   FROM snparch_ctl_execution_log 
+   WHERE data_validation_status = 'FAIL' OR validation_status = 'WARNING';
+   ```
+
+3. **Track index health**
+   ```sql
+   -- Monitor invalid indexes
+   SELECT execution_id, partition_date, 
+          invalid_indexes_before, invalid_indexes_after
+   FROM snparch_ctl_execution_log
+   WHERE invalid_indexes_after > 0;
+   ```
+
+4. **Use appropriate compression for your use case**
    - Recent archives (< 1 year): `OLTP`
    - Old archives (> 1 year): `ARCHIVE HIGH`
 
-3. **Monitor execution log regularly**
+5. **Monitor execution log regularly**
    ```sql
    SELECT * FROM snparch_ctl_execution_log 
-   WHERE validation_status != 'SUCCESS';
+   WHERE validation_status NOT IN ('SUCCESS', 'WARNING');
    ```
 
-4. **Archive execution log periodically**
+6. **Archive execution log periodically**
    ```sql
-   -- Keep last 90 days
+   -- Keep last 90 days of successful executions
    DELETE FROM snparch_ctl_execution_log
    WHERE execution_date < SYSTIMESTAMP - INTERVAL '90' DAY
-     AND validation_status = 'SUCCESS';
+     AND validation_status = 'SUCCESS'
+     AND data_validation_status = 'PASS';
+   COMMIT;
    ```
 
-5. **Test configuration changes in non-production first**
+7. **Test configuration changes in non-production first**
+
+8. **Use the DDL generator for consistency**
+   ```sql
+   -- Always use generate_archive_setup.sql for new tables
+   -- Ensures consistent naming conventions and structure
+   SQL> @generate_archive_setup.sql
+   ```
+
+9. **Review WARNING status executions**
+   ```sql
+   -- Investigate executions that completed but failed validation
+   SELECT * FROM snparch_ctl_execution_log
+   WHERE validation_status = 'WARNING'
+   ORDER BY execution_date DESC;
+   ```
+
+10. **Prevent concurrent access during archival**
+    - Schedule archival during low-activity periods
+    - Consider table locks for critical partitions
+    - Monitor for concurrent DML that might affect validation
 
 ## Additional Resources
 
@@ -353,6 +565,22 @@ This project is provided as-is for educational and demonstration purposes.
 Created by [@granulegazer](https://github.com/granulegazer)
 
 ## Version History
+
+**v3.0** - Oracle 19.26 production-ready release (Current)
+- Enhanced execution logging with 38 tracked metrics
+- Added comprehensive data validation (before/after record counts)
+- Added index tracking (count and size for source/archive tables)
+- Added invalid index monitoring (before/after exchange)
+- Added partition validation (throws exception if table not partitioned)
+- Added data validation status (PASS/FAIL)
+- Added WARNING status for failed validations
+- Added total_duration_seconds tracking
+- Created DDL generator (`generate_archive_setup.sql`) using DBMS_METADATA
+- Implemented SNPARCH_* naming convention for archive objects
+- Separated configuration data into dedicated script (02_config_data.sql)
+- Added comprehensive inline documentation (150+ lines)
+- Updated all version references to Oracle 19.26
+- Restricted logging to 'I' (Info) and 'E' (Error) types only
 
 **v2.0** - Oracle 19c optimized release
 - Added configuration table (`SNPARCH_CNF_PARTITION_ARCHIVE`)
