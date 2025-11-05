@@ -229,23 +229,54 @@ The generator uses these DBMS_METADATA settings:
 ```
 demo-partition-exchange/
 ├── README.md                           # This file
+├── SEPARATION_SUMMARY.md               # Framework/demo separation details
 ├── .github/
 │   └── copilot-instructions.md         # AI coding guidelines
 └── working/
-    ├── 00_deployment_validation.sql    # Deployment validation script (run after install)
-    ├── 00_run_all.sql                  # Master script - runs all components
-    ├── 01_setup.sql                    # Creates tables, indexes, config tables
-    ├── 02_config_data.sql              # Configuration data INSERT statements
-    ├── 03_data_generator.sql           # Generates sample data for testing
-    ├── 04_archive_procedure.sql        # Core archival procedure with comprehensive logging
-    ├── 05_test_scenarios.sql           # Test cases including compression tests
-    ├── 06_monitoring_queries.sql       # Monitoring and execution history queries
-    ├── 07_unified_view.sql             # View combining active + archived data
-    ├── 08_helper_functions.sql         # Utility functions
-    ├── config_management.sql           # Configuration management scripts
-    ├── generate_archive_setup.sql      # DDL generator for new archive setups
-    └── 99_cleanup.sql                  # Cleanup script
+    ├── FRAMEWORK FILES (Required):
+    │   ├── 00_quick_start.sql          # Deployment guide with 3 options
+    │   ├── 00_run_all.sql              # Master script - runs all components
+    │   ├── 01_setup.sql                # Creates framework objects (types, tables, indexes)
+    │   ├── 02_config_data.sql          # Production config template (customize!)
+    │   ├── 04_archive_procedure.sql    # Core archival procedure with validation
+    │   ├── 08_helper_functions.sql     # Utility functions (date ranges, partition info)
+    │   └── generate_archive_setup.sql  # DDL generator for new table pairs (cross-schema)
+    │
+    ├── DEMO FILES (Optional - for learning):
+    │   ├── demo_tables_setup.sql       # Creates SALES/SALES_ARCHIVE demo tables
+    │   ├── demo_config_data.sql        # Configuration for demo tables
+    │   ├── 03_data_generator.sql       # Generates test data for SALES table
+    │   └── 05_test_scenarios.sql       # Comprehensive test scenarios
+    │
+    ├── MONITORING FILES (Optional but recommended):
+    │   ├── 06_monitoring_queries.sql   # 16 monitoring and analysis queries
+    │   └── 07_unified_view.sql         # Combined execution view with metrics
+    │
+    └── UTILITY FILES:
+        ├── 00_deployment_validation.sql # Validates installation (12 categories, 20+ checks)
+        ├── config_management.sql       # Configuration management scripts
+        └── 99_cleanup.sql              # Cleanup script (use with caution)
 ```
+
+### File Purposes
+
+**Framework Files (Required for all deployments):**
+- `01_setup.sql` - Core objects: DATE_ARRAY_TYPE, config table, execution log (38 columns)
+- `04_archive_procedure.sql` - Main procedure with 7 pre-exchange validations
+- `08_helper_functions.sql` - Helper functions for date ranges and partition info
+
+**Demo Files (Optional - skip for production):**
+- `demo_tables_setup.sql` - SALES and SALES_ARCHIVE interval partitioned tables
+- `demo_config_data.sql` - Configuration linking SALES → SALES_ARCHIVE
+- `03_data_generator.sql` - Sample data for testing
+- `05_test_scenarios.sql` - Test execution and validation
+
+**Deployment Options:**
+1. **Complete Demo** (learning): Run `@00_run_all.sql` - includes everything
+2. **Production Only**: Run framework files only, skip demo files
+3. **Quick Validation**: Framework + demo for testing, skip monitoring
+
+See `SEPARATION_SUMMARY.md` for detailed deployment scenarios.
 
 ## Usage Examples
 

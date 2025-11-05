@@ -35,7 +35,7 @@ BEGIN
     DBMS_OUTPUT.PUT_LINE('1. CHECKING TABLES');
     DBMS_OUTPUT.PUT_LINE('========================================');
     
-    -- Check SALES table
+    -- Check SALES table (OPTIONAL - demo only)
     v_check_count := v_check_count + 1;
     BEGIN
         SELECT COUNT(*) INTO v_count 
@@ -49,14 +49,14 @@ BEGIN
             WHERE table_name = 'SALES';
             
             IF v_status = 'YES' THEN
-                DBMS_OUTPUT.PUT_LINE('[PASS] SALES table exists and is partitioned');
+                DBMS_OUTPUT.PUT_LINE('[PASS] SALES table exists and is partitioned (demo table)');
             ELSE
-                DBMS_OUTPUT.PUT_LINE('[FAIL] SALES table exists but is NOT partitioned');
-                v_error_count := v_error_count + 1;
+                DBMS_OUTPUT.PUT_LINE('[WARN] SALES table exists but is NOT partitioned (demo table)');
+                v_warning_count := v_warning_count + 1;
             END IF;
         ELSE
-            DBMS_OUTPUT.PUT_LINE('[FAIL] SALES table does not exist');
-            v_error_count := v_error_count + 1;
+            DBMS_OUTPUT.PUT_LINE('[WARN] SALES table does not exist (optional demo table - skip if using production tables)');
+            v_warning_count := v_warning_count + 1;
         END IF;
     EXCEPTION
         WHEN OTHERS THEN
@@ -64,7 +64,7 @@ BEGIN
             v_error_count := v_error_count + 1;
     END;
     
-    -- Check SALES_ARCHIVE table
+    -- Check SALES_ARCHIVE table (OPTIONAL - demo only)
     v_check_count := v_check_count + 1;
     BEGIN
         SELECT COUNT(*) INTO v_count 
@@ -77,14 +77,14 @@ BEGIN
             WHERE table_name = 'SALES_ARCHIVE';
             
             IF v_status = 'YES' THEN
-                DBMS_OUTPUT.PUT_LINE('[PASS] SALES_ARCHIVE table exists and is partitioned');
+                DBMS_OUTPUT.PUT_LINE('[PASS] SALES_ARCHIVE table exists and is partitioned (demo table)');
             ELSE
-                DBMS_OUTPUT.PUT_LINE('[FAIL] SALES_ARCHIVE table exists but is NOT partitioned');
-                v_error_count := v_error_count + 1;
+                DBMS_OUTPUT.PUT_LINE('[WARN] SALES_ARCHIVE table exists but is NOT partitioned (demo table)');
+                v_warning_count := v_warning_count + 1;
             END IF;
         ELSE
-            DBMS_OUTPUT.PUT_LINE('[FAIL] SALES_ARCHIVE table does not exist');
-            v_error_count := v_error_count + 1;
+            DBMS_OUTPUT.PUT_LINE('[WARN] SALES_ARCHIVE table does not exist (optional demo table - skip if using production tables)');
+            v_warning_count := v_warning_count + 1;
         END IF;
     EXCEPTION
         WHEN OTHERS THEN
@@ -149,7 +149,7 @@ BEGIN
     DBMS_OUTPUT.PUT_LINE('2. CHECKING TABLE STRUCTURES');
     DBMS_OUTPUT.PUT_LINE('========================================');
     
-    -- Check SALES column count
+    -- Check SALES column count (OPTIONAL - demo only)
     v_check_count := v_check_count + 1;
     BEGIN
         SELECT COUNT(*) INTO v_count
@@ -157,18 +157,21 @@ BEGIN
         WHERE table_name = 'SALES';
         
         IF v_count >= 8 THEN
-            DBMS_OUTPUT.PUT_LINE('[PASS] SALES table has ' || v_count || ' columns');
+            DBMS_OUTPUT.PUT_LINE('[PASS] SALES table has ' || v_count || ' columns (demo table)');
+        ELSIF v_count > 0 THEN
+            DBMS_OUTPUT.PUT_LINE('[WARN] SALES table has only ' || v_count || ' columns (expected 8+ for demo)');
+            v_warning_count := v_warning_count + 1;
         ELSE
-            DBMS_OUTPUT.PUT_LINE('[FAIL] SALES table has only ' || v_count || ' columns (expected 8+)');
-            v_error_count := v_error_count + 1;
+            DBMS_OUTPUT.PUT_LINE('[WARN] SALES table not found (optional demo table)');
+            v_warning_count := v_warning_count + 1;
         END IF;
     EXCEPTION
         WHEN OTHERS THEN
-            DBMS_OUTPUT.PUT_LINE('[ERROR] Error checking SALES columns: ' || SQLERRM);
-            v_error_count := v_error_count + 1;
+            DBMS_OUTPUT.PUT_LINE('[WARN] SALES table validation skipped (optional demo table)');
+            v_warning_count := v_warning_count + 1;
     END;
     
-    -- Check SALES_ARCHIVE column count
+    -- Check SALES_ARCHIVE column count (OPTIONAL - demo only)
     v_check_count := v_check_count + 1;
     BEGIN
         SELECT COUNT(*) INTO v_count
@@ -176,15 +179,18 @@ BEGIN
         WHERE table_name = 'SALES_ARCHIVE';
         
         IF v_count >= 8 THEN
-            DBMS_OUTPUT.PUT_LINE('[PASS] SALES_ARCHIVE table has ' || v_count || ' columns');
+            DBMS_OUTPUT.PUT_LINE('[PASS] SALES_ARCHIVE table has ' || v_count || ' columns (demo table)');
+        ELSIF v_count > 0 THEN
+            DBMS_OUTPUT.PUT_LINE('[WARN] SALES_ARCHIVE table has only ' || v_count || ' columns (expected 8+ for demo)');
+            v_warning_count := v_warning_count + 1;
         ELSE
-            DBMS_OUTPUT.PUT_LINE('[FAIL] SALES_ARCHIVE table has only ' || v_count || ' columns (expected 8+)');
-            v_error_count := v_error_count + 1;
+            DBMS_OUTPUT.PUT_LINE('[WARN] SALES_ARCHIVE table not found (optional demo table)');
+            v_warning_count := v_warning_count + 1;
         END IF;
     EXCEPTION
         WHEN OTHERS THEN
-            DBMS_OUTPUT.PUT_LINE('[ERROR] Error checking SALES_ARCHIVE columns: ' || SQLERRM);
-            v_error_count := v_error_count + 1;
+            DBMS_OUTPUT.PUT_LINE('[WARN] SALES_ARCHIVE table validation skipped (optional demo table)');
+            v_warning_count := v_warning_count + 1;
     END;
     
     -- Check SNPARCH_CTL_EXECUTION_LOG column count (should have 38 columns)

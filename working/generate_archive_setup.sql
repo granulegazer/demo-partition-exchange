@@ -180,13 +180,23 @@ BEGIN
       
     IF v_num_indexes > 0 THEN
         DBMS_OUTPUT.PUT_LINE('-- Indexes');
+        DBMS_OUTPUT.PUT_LINE('-- Note: Excludes indexes auto-generated for PRIMARY KEY/UNIQUE constraints');
         
         FOR idx IN (
-            SELECT index_name
-            FROM dba_indexes
-            WHERE table_name = v_source_table
-              AND table_owner = v_schema_name
-            ORDER BY index_name
+            SELECT i.index_name
+            FROM dba_indexes i
+            WHERE i.table_name = v_source_table
+              AND i.table_owner = v_schema_name
+              -- Exclude indexes that were generated for constraints (PK, UNIQUE)
+              AND NOT EXISTS (
+                  SELECT 1
+                  FROM dba_constraints c
+                  WHERE c.table_name = i.table_name
+                    AND c.owner = i.table_owner
+                    AND c.index_name = i.index_name
+                    AND c.constraint_type IN ('P', 'U')  -- Primary Key or Unique
+              )
+            ORDER BY i.index_name
         ) LOOP
             BEGIN
                 v_index_ddl := DBMS_METADATA.GET_DDL('INDEX', idx.index_name, v_schema_name);
