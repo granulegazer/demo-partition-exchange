@@ -293,35 +293,35 @@ BEGIN
     DBMS_OUTPUT.PUT_LINE('    ''Y'',  -- validate_before_exchange');
     DBMS_OUTPUT.PUT_LINE('    ''Y'',  -- gather_stats_after_exchange');
     DBMS_OUTPUT.PUT_LINE('    ''N'',  -- enable_compression (change to Y if needed)');
-    DBMS_OUTPUT.PUT_LINE('    NULL   -- compression_type (BASIC, OLTP, QUERY LOW/HIGH, ARCHIVE LOW/HIGH)');
+    DBMS_OUTPUT.PUT_LINE('    NULL   -- compression_type');
     DBMS_OUTPUT.PUT_LINE(');');
     DBMS_OUTPUT.PUT_LINE('');
     DBMS_OUTPUT.PUT_LINE('COMMIT;');
     DBMS_OUTPUT.PUT_LINE('');
     
-    -- ========================================
-    -- SUMMARY
-    -- ========================================
-    DBMS_OUTPUT.PUT_LINE('');
-    DBMS_OUTPUT.PUT_LINE('================================================================================');
-    DBMS_OUTPUT.PUT_LINE('SUMMARY');
-    DBMS_OUTPUT.PUT_LINE('================================================================================');
-    DBMS_OUTPUT.PUT_LINE('The following DDL has been generated using DBMS_METADATA:');
-    DBMS_OUTPUT.PUT_LINE('  Schema: ' || v_schema_name);
-    DBMS_OUTPUT.PUT_LINE('  1. Archive table: ' || v_archive_table);
-    DBMS_OUTPUT.PUT_LINE('     - Complete table structure from ' || v_source_table);
-    DBMS_OUTPUT.PUT_LINE('     - ' || v_num_constraints || ' constraint(s)');
-    DBMS_OUTPUT.PUT_LINE('     - ' || v_num_indexes || ' index(es)');
-    DBMS_OUTPUT.PUT_LINE('  2. Staging table: ' || v_staging_table);
-    DBMS_OUTPUT.PUT_LINE('  3. Configuration insert for SNPARCH_CNF_PARTITION_ARCHIVE');
-    DBMS_OUTPUT.PUT_LINE('');
-    DBMS_OUTPUT.PUT_LINE('NOTES:');
-    DBMS_OUTPUT.PUT_LINE('  - DDL extracted using DBMS_METADATA.GET_DDL for accuracy');
-    DBMS_OUTPUT.PUT_LINE('  - Script uses DBA_ views (requires appropriate privileges)');
-    DBMS_OUTPUT.PUT_LINE('  - Review and adjust compression settings if needed');
-    DBMS_OUTPUT.PUT_LINE('  - Review and adjust tablespace assignments if needed');
-    DBMS_OUTPUT.PUT_LINE('  - Test the DDL in a development environment first');
-    DBMS_OUTPUT.PUT_LINE('================================================================================');
+    -- -- ========================================
+    -- -- SUMMARY
+    -- -- ========================================
+    -- DBMS_OUTPUT.PUT_LINE('');
+    -- DBMS_OUTPUT.PUT_LINE('================================================================================');
+    -- DBMS_OUTPUT.PUT_LINE('SUMMARY');
+    -- DBMS_OUTPUT.PUT_LINE('================================================================================');
+    -- DBMS_OUTPUT.PUT_LINE('The following DDL has been generated using DBMS_METADATA:');
+    -- DBMS_OUTPUT.PUT_LINE('  Schema: ' || v_schema_name);
+    -- DBMS_OUTPUT.PUT_LINE('  1. Archive table: ' || v_archive_table);
+    -- DBMS_OUTPUT.PUT_LINE('     - Complete table structure from ' || v_source_table);
+    -- DBMS_OUTPUT.PUT_LINE('     - ' || v_num_constraints || ' constraint(s)');
+    -- DBMS_OUTPUT.PUT_LINE('     - ' || v_num_indexes || ' index(es)');
+    -- DBMS_OUTPUT.PUT_LINE('  2. Staging table: ' || v_staging_table);
+    -- DBMS_OUTPUT.PUT_LINE('  3. Configuration insert for SNPARCH_CNF_PARTITION_ARCHIVE');
+    -- DBMS_OUTPUT.PUT_LINE('');
+    -- DBMS_OUTPUT.PUT_LINE('NOTES:');
+    -- DBMS_OUTPUT.PUT_LINE('  - DDL extracted using DBMS_METADATA.GET_DDL for accuracy');
+    -- DBMS_OUTPUT.PUT_LINE('  - Script uses DBA_ views (requires appropriate privileges)');
+    -- DBMS_OUTPUT.PUT_LINE('  - Review and adjust compression settings if needed');
+    -- DBMS_OUTPUT.PUT_LINE('  - Review and adjust tablespace assignments if needed');
+    -- DBMS_OUTPUT.PUT_LINE('  - Test the DDL in a development environment first');
+    -- DBMS_OUTPUT.PUT_LINE('================================================================================');
     
 EXCEPTION
     WHEN OTHERS THEN
