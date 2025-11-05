@@ -7,6 +7,7 @@ A comprehensive demonstration of Oracle Database 19.26 partition exchange method
 - ✅ **Instant Data Archival** - Partition exchange (metadata-only operation)
 - ✅ **Configuration-Driven** - Centralized configuration table with audit trails
 - ✅ **Comprehensive Execution Logging** - Complete history with before/after metrics
+- ✅ **Structure Validation** - Automatic table structure compatibility check before exchange
 - ✅ **Data Validation** - Automatic record count verification after exchange
 - ✅ **Index Tracking** - Monitor index count and size before/after exchange
 - ✅ **Compression Support** - Multiple compression types (OLTP, QUERY, ARCHIVE)
@@ -44,6 +45,9 @@ sqlplus username/password@database
 # Run all scripts at once
 SQL> @00_run_all.sql
 
+# Validate deployment
+SQL> @00_deployment_validation.sql
+
 # Or run individually in sequence
 SQL> @01_setup.sql                  -- Create tables, types, and objects
 SQL> @02_config_data.sql            -- Insert configuration data
@@ -53,6 +57,34 @@ SQL> @05_test_scenarios.sql         -- Run test scenarios
 SQL> @06_monitoring_queries.sql     -- View monitoring queries
 SQL> @07_unified_view.sql           -- Create unified data view
 SQL> @08_helper_functions.sql       -- Create utility functions
+
+# After individual installation, validate
+SQL> @00_deployment_validation.sql
+```
+
+### Deployment Validation
+
+The `00_deployment_validation.sql` script performs 12 comprehensive checks:
+
+1. **Tables** - Verifies all tables exist and are properly partitioned
+2. **Table Structures** - Validates column counts and structure compatibility
+3. **Types** - Checks collection types exist
+4. **Functions** - Verifies functions exist and are VALID
+5. **Procedures** - Checks procedures exist and are VALID
+6. **Views** - Validates unified view exists
+7. **Indexes** - Confirms indexes exist and are VALID
+8. **Constraints** - Verifies primary keys and constraints
+9. **Partition Configuration** - Checks partition setup and compatibility
+10. **Configuration Data** - Validates configuration records
+11. **Object Dependencies** - Ensures proper dependency chain
+12. **Invalid Objects** - Lists any invalid objects
+
+**Expected Output:**
+```
+Total Checks:   20+
+Errors:         0
+Warnings:       0-2 (optional objects)
+Status:         SUCCESS
 ```
 
 ## Architecture Overview
@@ -186,6 +218,7 @@ demo-partition-exchange/
 ├── .github/
 │   └── copilot-instructions.md         # AI coding guidelines
 └── working/
+    ├── 00_deployment_validation.sql    # Deployment validation script (run after install)
     ├── 00_run_all.sql                  # Master script - runs all components
     ├── 01_setup.sql                    # Creates tables, indexes, config tables
     ├── 02_config_data.sql              # Configuration data INSERT statements
@@ -360,6 +393,13 @@ COMMIT;
 
 ### Data Validation & Integrity
 
+- **Structure Validation** - Comprehensive table structure compatibility check before exchange:
+  - Verifies all three tables exist (source, archive, staging)
+  - Confirms archive table is partitioned and staging table is NOT partitioned
+  - Validates column count matches across all tables
+  - Checks column names, data types, sizes, and nullability match exactly
+  - Verifies partition key columns match between source and archive tables
+  - Raises specific error codes for each validation failure (ORA-20010 through ORA-20018)
 - **Partition Validation** - Procedure checks if table is partitioned, throws exception if not
 - **Record Count Validation** - Automatic before/after comparison to detect data loss
 - **Index Health Tracking** - Monitor invalid indexes before and after exchange
@@ -447,13 +487,33 @@ SQL> @99_cleanup.sql
 ## Common Issues & Solutions
 
 **Q: ORA-14097: column type or size mismatch in ALTER TABLE EXCHANGE PARTITION**  
-**A:** The staging table is missing the PRIMARY KEY constraint. The procedure automatically adds it, but if creating manually, ensure you add: `ALTER TABLE staging_table ADD CONSTRAINT pk_staging PRIMARY KEY (sale_id, sale_date);`
+**A:** The procedure now automatically validates table structure before attempting exchange. If you see this error, it means:
+1. The structure validation was bypassed or disabled
+2. The table structure changed after validation
+Common causes and solutions:
+- **Missing PRIMARY KEY on staging table**: The procedure automatically adds it, but if creating manually, ensure: `ALTER TABLE staging_table ADD CONSTRAINT pk_staging PRIMARY KEY (sale_id, sale_date);`
+- **Column mismatch detected**: The procedure will raise ORA-20016 (source vs archive) or ORA-20017 (source vs staging) during validation phase
+- **Data type differences**: Check the specific columns mentioned in the error and verify they match exactly across all three tables
 
 **Q: ORA-14098: index mismatch in ALTER TABLE EXCHANGE PARTITION**  
 **A:** Don't create indexes on the staging table manually. The procedure uses `WITHOUT VALIDATION` which exchanges index segments automatically from the partitioned tables.
 
 **Q: ORA-14019: partition bound element must be one of: DATE, DATETIME, INTERVAL, NUMBER, or VARCHAR2**  
 **A:** The table is not partitioned. The archival procedure now automatically validates this and throws a custom exception: `e_table_not_partitioned: The table is not partitioned. Partition exchange requires a partitioned table.`
+
+**Q: ORA-20010 through ORA-20018 errors - what do they mean?**  
+**A:** These are structure validation errors raised during the compatibility check:
+- **ORA-20010**: Source table does not exist
+- **ORA-20011**: Archive table does not exist  
+- **ORA-20012**: Staging table does not exist
+- **ORA-20013**: Archive table is not partitioned (must be partitioned)
+- **ORA-20014**: Staging table is partitioned (must NOT be partitioned)
+- **ORA-20015**: Column count mismatch between tables
+- **ORA-20016**: Column structure mismatch between source and archive (names, types, or sizes differ)
+- **ORA-20017**: Column structure mismatch between source and staging (names, types, or sizes differ)
+- **ORA-20018**: Partition key columns don't match between source and archive tables
+
+All these validations run BEFORE any exchange attempt, preventing runtime errors.
 
 **Q: Why use a staging table instead of direct exchange?**  
 **A:** Direct exchange would swap data between source and archive. The staging table acts as an intermediary to move data from source → archive while maintaining the source table structure.
@@ -567,6 +627,19 @@ Created by [@granulegazer](https://github.com/granulegazer)
 ## Version History
 
 **v3.0** - Oracle 19.26 production-ready release (Current)
+- **Deployment Validation Script**: Created comprehensive validation script (12 check categories, 20+ individual checks)
+  - Validates all tables, types, functions, procedures, views, indexes, and constraints
+  - Checks object status (VALID/INVALID)
+  - Verifies table structure compatibility
+  - Validates partition configuration and key compatibility
+  - Checks configuration data completeness
+  - Reports detailed summary with error/warning counts
+- **Structure Validation**: Added comprehensive table structure compatibility check before exchange
+  - Validates all three tables exist (source, archive, staging)
+  - Confirms archive table is partitioned and staging table is NOT partitioned
+  - Verifies column count, names, data types, sizes, and nullability match exactly
+  - Checks partition key columns match between source and archive
+  - Raises specific error codes (ORA-20010 through ORA-20018) for each validation failure
 - Enhanced execution logging with 38 tracked metrics
 - Added comprehensive data validation (before/after record counts)
 - Added index tracking (count and size for source/archive tables)
@@ -578,7 +651,10 @@ Created by [@granulegazer](https://github.com/granulegazer)
 - Created DDL generator (`generate_archive_setup.sql`) using DBMS_METADATA
 - Implemented SNPARCH_* naming convention for archive objects
 - Separated configuration data into dedicated script (02_config_data.sql)
-- Added comprehensive inline documentation (150+ lines)
+- Enhanced test scenarios with validation and index health checks
+- Enhanced monitoring queries with 16 comprehensive queries including validation tracking
+- Enhanced unified view with 6 example queries and performance tips
+- Added comprehensive inline documentation (200+ lines)
 - Updated all version references to Oracle 19.26
 - Restricted logging to 'I' (Info) and 'E' (Error) types only
 

@@ -114,9 +114,16 @@ CREATE OR REPLACE PROCEDURE archive_partitions_by_dates (
     
     Process Flow:
         1. Validation Phase:
-           - Verify table exists and is partitioned
+           - Verify source table exists and is partitioned
            - Load configuration from SNPARCH_CNF_PARTITION_ARCHIVE
            - Check configuration is active
+           - Validate table structure compatibility:
+             * Verify all three tables exist (source, archive, staging)
+             * Confirm archive table is partitioned
+             * Confirm staging table is NOT partitioned
+             * Verify column count matches across all tables
+             * Validate column names, data types, and sizes match exactly
+             * Check partition key columns match between source and archive
            - Optionally validate indexes (if validate_before_exchange = Y)
         
         2. Pre-Exchange Metrics Collection:
@@ -172,6 +179,16 @@ CREATE OR REPLACE PROCEDURE archive_partitions_by_dates (
           * e_table_not_partitioned: Source table is not partitioned
           * e_config_not_found: No configuration found
           * e_config_inactive: Configuration exists but is inactive
+        - Structure validation errors (raise application errors):
+          * -20010: Source table does not exist
+          * -20011: Archive table does not exist
+          * -20012: Staging table does not exist
+          * -20013: Archive table is not partitioned
+          * -20014: Staging table is partitioned (must be non-partitioned)
+          * -20015: Column count mismatch
+          * -20016: Column structure mismatch (source vs archive)
+          * -20017: Column structure mismatch (source vs staging)
+          * -20018: Partition key mismatch
     
     Performance Considerations:
         - Both exchange operations are INSTANT (metadata-only)
@@ -326,7 +343,7 @@ BEGIN
     
     v_step := v_step + 1;
     
-    -- Get configuration for this table
+    -- Get configuration for this table to retrieve archive and staging table names
     BEGIN
         SELECT 
             archive_table_name,
@@ -367,6 +384,210 @@ BEGIN
         'Configuration loaded', 
         'Source: ' || p_table_name || ', Archive: ' || v_archive_table_name || ', Staging: ' || v_staging_table, 
         USER);
+    
+    -- Validate table structure compatibility for partition exchange
+    v_step := v_step + 1;
+    DECLARE
+        v_source_columns NUMBER := 0;
+        v_archive_columns NUMBER := 0;
+        v_staging_columns NUMBER := 0;
+        v_column_mismatch NUMBER := 0;
+        v_archive_partitioned VARCHAR2(3);
+        v_staging_partitioned VARCHAR2(3);
+        e_structure_mismatch EXCEPTION;
+    BEGIN
+        prc_log_error_autonomous(v_proc_name, 'I', v_step, NULL, NULL, 
+            'Validating table structures for partition exchange compatibility', 
+            'Source: ' || p_table_name || ', Archive: ' || v_archive_table_name || ', Staging: ' || v_staging_table, 
+            USER);
+        
+        -- 1. Check if all three tables exist
+        BEGIN
+            SELECT COUNT(*) INTO v_source_columns
+            FROM user_tables
+            WHERE table_name = UPPER(p_table_name);
+            
+            IF v_source_columns = 0 THEN
+                RAISE_APPLICATION_ERROR(-20010, 'Source table ' || p_table_name || ' does not exist');
+            END IF;
+            
+            SELECT COUNT(*) INTO v_archive_columns
+            FROM user_tables
+            WHERE table_name = UPPER(v_archive_table_name);
+            
+            IF v_archive_columns = 0 THEN
+                RAISE_APPLICATION_ERROR(-20011, 'Archive table ' || v_archive_table_name || ' does not exist');
+            END IF;
+            
+            SELECT COUNT(*) INTO v_staging_columns
+            FROM user_tables
+            WHERE table_name = UPPER(v_staging_table);
+            
+            IF v_staging_columns = 0 THEN
+                RAISE_APPLICATION_ERROR(-20012, 'Staging table ' || v_staging_table || ' does not exist');
+            END IF;
+        END;
+        
+        -- 2. Check archive table is partitioned
+        SELECT partitioned INTO v_archive_partitioned
+        FROM user_tables
+        WHERE table_name = UPPER(v_archive_table_name);
+        
+        IF v_archive_partitioned != 'YES' THEN
+            prc_log_error_autonomous(v_proc_name, 'E', v_step, NULL, NULL, 
+                'Archive table is not partitioned', 'Archive: ' || v_archive_table_name, USER);
+            RAISE_APPLICATION_ERROR(-20013, 'Archive table ' || v_archive_table_name || ' must be partitioned');
+        END IF;
+        
+        -- 3. Check staging table is NOT partitioned
+        SELECT partitioned INTO v_staging_partitioned
+        FROM user_tables
+        WHERE table_name = UPPER(v_staging_table);
+        
+        IF v_staging_partitioned = 'YES' THEN
+            prc_log_error_autonomous(v_proc_name, 'E', v_step, NULL, NULL, 
+                'Staging table is partitioned', 'Staging: ' || v_staging_table, USER);
+            RAISE_APPLICATION_ERROR(-20014, 'Staging table ' || v_staging_table || ' must NOT be partitioned');
+        END IF;
+        
+        -- 4. Check column count matches
+        SELECT COUNT(*) INTO v_source_columns
+        FROM user_tab_columns
+        WHERE table_name = UPPER(p_table_name);
+        
+        SELECT COUNT(*) INTO v_archive_columns
+        FROM user_tab_columns
+        WHERE table_name = UPPER(v_archive_table_name);
+        
+        SELECT COUNT(*) INTO v_staging_columns
+        FROM user_tab_columns
+        WHERE table_name = UPPER(v_staging_table);
+        
+        IF v_source_columns != v_archive_columns OR v_source_columns != v_staging_columns THEN
+            prc_log_error_autonomous(v_proc_name, 'E', v_step, NULL, NULL, 
+                'Column count mismatch', 
+                'Source: ' || v_source_columns || ', Archive: ' || v_archive_columns || ', Staging: ' || v_staging_columns, 
+                USER);
+            RAISE_APPLICATION_ERROR(-20015, 
+                'Column count mismatch - Source: ' || v_source_columns || 
+                ', Archive: ' || v_archive_columns || 
+                ', Staging: ' || v_staging_columns);
+        END IF;
+        
+        -- 5. Check column names, data types, and sizes match
+        -- Compare source vs archive
+        SELECT COUNT(*)
+        INTO v_column_mismatch
+        FROM (
+            -- Columns in source but not in archive (or different data type/size)
+            SELECT column_name, data_type, data_length, data_precision, data_scale, nullable
+            FROM user_tab_columns
+            WHERE table_name = UPPER(p_table_name)
+            MINUS
+            SELECT column_name, data_type, data_length, data_precision, data_scale, nullable
+            FROM user_tab_columns
+            WHERE table_name = UPPER(v_archive_table_name)
+            UNION ALL
+            -- Columns in archive but not in source (or different data type/size)
+            SELECT column_name, data_type, data_length, data_precision, data_scale, nullable
+            FROM user_tab_columns
+            WHERE table_name = UPPER(v_archive_table_name)
+            MINUS
+            SELECT column_name, data_type, data_length, data_precision, data_scale, nullable
+            FROM user_tab_columns
+            WHERE table_name = UPPER(p_table_name)
+        );
+        
+        IF v_column_mismatch > 0 THEN
+            prc_log_error_autonomous(v_proc_name, 'E', v_step, NULL, NULL, 
+                'Column structure mismatch between source and archive tables', 
+                'Mismatched columns: ' || v_column_mismatch, USER);
+            RAISE_APPLICATION_ERROR(-20016, 
+                'Column structure mismatch between ' || p_table_name || 
+                ' and ' || v_archive_table_name || ' (' || v_column_mismatch || ' differences)');
+        END IF;
+        
+        -- Compare source vs staging
+        SELECT COUNT(*)
+        INTO v_column_mismatch
+        FROM (
+            SELECT column_name, data_type, data_length, data_precision, data_scale, nullable
+            FROM user_tab_columns
+            WHERE table_name = UPPER(p_table_name)
+            MINUS
+            SELECT column_name, data_type, data_length, data_precision, data_scale, nullable
+            FROM user_tab_columns
+            WHERE table_name = UPPER(v_staging_table)
+            UNION ALL
+            SELECT column_name, data_type, data_length, data_precision, data_scale, nullable
+            FROM user_tab_columns
+            WHERE table_name = UPPER(v_staging_table)
+            MINUS
+            SELECT column_name, data_type, data_length, data_precision, data_scale, nullable
+            FROM user_tab_columns
+            WHERE table_name = UPPER(p_table_name)
+        );
+        
+        IF v_column_mismatch > 0 THEN
+            prc_log_error_autonomous(v_proc_name, 'E', v_step, NULL, NULL, 
+                'Column structure mismatch between source and staging tables', 
+                'Mismatched columns: ' || v_column_mismatch, USER);
+            RAISE_APPLICATION_ERROR(-20017, 
+                'Column structure mismatch between ' || p_table_name || 
+                ' and ' || v_staging_table || ' (' || v_column_mismatch || ' differences)');
+        END IF;
+        
+        -- 6. Validate partition key compatibility (source and archive must use same partition key)
+        DECLARE
+            v_source_part_key VARCHAR2(4000);
+            v_archive_part_key VARCHAR2(4000);
+        BEGIN
+            -- Get source table partition key columns (concatenated, ordered)
+            SELECT LISTAGG(column_name, ',') WITHIN GROUP (ORDER BY column_position)
+            INTO v_source_part_key
+            FROM user_part_key_columns
+            WHERE name = UPPER(p_table_name)
+              AND object_type = 'TABLE';
+            
+            -- Get archive table partition key columns (concatenated, ordered)
+            SELECT LISTAGG(column_name, ',') WITHIN GROUP (ORDER BY column_position)
+            INTO v_archive_part_key
+            FROM user_part_key_columns
+            WHERE name = UPPER(v_archive_table_name)
+              AND object_type = 'TABLE';
+            
+            IF v_source_part_key != v_archive_part_key THEN
+                prc_log_error_autonomous(v_proc_name, 'E', v_step, NULL, NULL, 
+                    'Partition key mismatch', 
+                    'Source: ' || v_source_part_key || ', Archive: ' || v_archive_part_key, USER);
+                RAISE_APPLICATION_ERROR(-20018, 
+                    'Partition key mismatch - Source: (' || v_source_part_key || 
+                    '), Archive: (' || v_archive_part_key || ')');
+            END IF;
+            
+            prc_log_error_autonomous(v_proc_name, 'I', v_step, NULL, NULL, 
+                'Partition key validated', 'Key columns: ' || v_source_part_key, USER);
+        END;
+        
+        -- 7. All validations passed
+        prc_log_error_autonomous(v_proc_name, 'I', v_step, NULL, NULL, 
+            'Table structure validation PASSED', 
+            'All tables are partition exchange compatible', USER);
+        
+        DBMS_OUTPUT.PUT_LINE('Structure validation: PASSED');
+        DBMS_OUTPUT.PUT_LINE('  - Source columns: ' || v_source_columns);
+        DBMS_OUTPUT.PUT_LINE('  - Archive columns: ' || v_archive_columns);
+        DBMS_OUTPUT.PUT_LINE('  - Staging columns: ' || v_staging_columns);
+        DBMS_OUTPUT.PUT_LINE('  - Archive partitioned: YES');
+        DBMS_OUTPUT.PUT_LINE('  - Staging partitioned: NO');
+        DBMS_OUTPUT.PUT_LINE('  - Column structures: MATCH');
+        
+    EXCEPTION
+        WHEN OTHERS THEN
+            prc_log_error_autonomous(v_proc_name, 'E', v_step, SQLCODE, SQLERRM, 
+                'Structure validation failed', DBMS_UTILITY.FORMAT_ERROR_BACKTRACE, USER);
+            RAISE;
+    END;
     
     -- Get initial table stats
     v_step := v_step + 1;

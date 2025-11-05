@@ -142,11 +142,11 @@ WHERE source_table_name = 'SALES';
 COMMIT;
 
 -- ========================================
--- NEW: View execution results
+-- NEW: View execution results with enhanced metrics
 -- ========================================
 PROMPT
 PROMPT ========================================
-PROMPT Recent Execution Results
+PROMPT Recent Execution Results (Enhanced Metrics)
 PROMPT ========================================
 
 SELECT 
@@ -157,10 +157,19 @@ SELECT
     TO_CHAR(partition_date, 'YYYY-MM-DD') AS data_date,
     records_archived,
     partition_size_mb,
+    source_index_count,
+    archive_index_count,
+    ROUND(source_index_size_mb, 2) AS src_idx_mb,
+    ROUND(archive_index_size_mb, 2) AS arch_idx_mb,
+    invalid_indexes_before,
+    invalid_indexes_after,
+    data_validation_status,
+    record_count_match,
     is_compressed,
     compression_type,
     ROUND(exchange_duration_seconds, 3) AS exchange_sec,
     ROUND(stats_gather_duration_seconds, 2) AS stats_sec,
+    ROUND(total_duration_seconds, 2) AS total_sec,
     validation_status
 FROM snparch_ctl_execution_log
 ORDER BY execution_id DESC
@@ -168,14 +177,64 @@ FETCH FIRST 10 ROWS ONLY;
 
 PROMPT
 PROMPT ========================================
-PROMPT Execution Summary
+PROMPT Execution Summary with Index Metrics
 PROMPT ========================================
 
 SELECT 
     COUNT(*) AS total_executions,
     SUM(records_archived) AS total_records_archived,
     ROUND(SUM(partition_size_mb), 2) AS total_size_mb,
+    ROUND(AVG(source_index_count), 1) AS avg_source_indexes,
+    ROUND(AVG(archive_index_count), 1) AS avg_archive_indexes,
+    ROUND(SUM(source_index_size_mb), 2) AS total_src_idx_mb,
+    ROUND(SUM(archive_index_size_mb), 2) AS total_arch_idx_mb,
     SUM(CASE WHEN is_compressed = 'Y' THEN 1 ELSE 0 END) AS compressed_count,
+    SUM(CASE WHEN data_validation_status = 'PASS' THEN 1 ELSE 0 END) AS validation_pass,
+    SUM(CASE WHEN data_validation_status = 'FAIL' THEN 1 ELSE 0 END) AS validation_fail,
+    SUM(CASE WHEN validation_status = 'WARNING' THEN 1 ELSE 0 END) AS warning_count,
     ROUND(AVG(exchange_duration_seconds), 3) AS avg_exchange_sec,
-    ROUND(AVG(stats_gather_duration_seconds), 2) AS avg_stats_sec
+    ROUND(AVG(stats_gather_duration_seconds), 2) AS avg_stats_sec,
+    ROUND(AVG(total_duration_seconds), 2) AS avg_total_sec
 FROM snparch_ctl_execution_log;
+
+PROMPT
+PROMPT ========================================
+PROMPT Data Validation Status Check
+PROMPT ========================================
+
+SELECT 
+    execution_id,
+    TO_CHAR(partition_date, 'YYYY-MM-DD') AS data_date,
+    source_records_before,
+    source_records_after,
+    archive_records_before,
+    archive_records_after,
+    records_archived,
+    record_count_match,
+    data_validation_status,
+    validation_status
+FROM snparch_ctl_execution_log
+ORDER BY execution_id DESC
+FETCH FIRST 10 ROWS ONLY;
+
+PROMPT
+PROMPT ========================================
+PROMPT Index Health Check
+PROMPT ========================================
+
+SELECT 
+    execution_id,
+    TO_CHAR(partition_date, 'YYYY-MM-DD') AS data_date,
+    source_index_count,
+    archive_index_count,
+    invalid_indexes_before,
+    invalid_indexes_after,
+    CASE 
+        WHEN invalid_indexes_after > invalid_indexes_before THEN 'DEGRADED'
+        WHEN invalid_indexes_after < invalid_indexes_before THEN 'IMPROVED'
+        ELSE 'UNCHANGED'
+    END AS index_health_trend
+FROM snparch_ctl_execution_log
+ORDER BY execution_id DESC
+FETCH FIRST 10 ROWS ONLY;
+
