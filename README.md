@@ -172,17 +172,31 @@ The `generate_archive_setup.sql` script automates the creation of archive infras
 ### Features
 
 - **DBMS_METADATA Integration** - Uses Oracle's built-in DDL extraction for accuracy
+- **Cross-Schema Support** - Uses DBA_ views to access any schema (requires privileges)
 - **Automatic Naming** - Applies SNPARCH_* prefix to archive and staging tables
 - **Complete Structure** - Generates constraints, indexes, and partitions
 - **Configuration Ready** - Creates INSERT statement for config table
 - **Clean Output** - No schema names or storage parameters
 - **Index Alignment** - Automatically renames indexes to match archive table
 
+### Prerequisites
+
+- **SELECT_CATALOG_ROLE** or **SELECT ANY DICTIONARY** privilege
+- SELECT privilege on DBA_TABLES, DBA_CONSTRAINTS, DBA_INDEXES, DBA_CONS_COLUMNS
+
+### Configuration
+
+Edit the script before running to set:
+```sql
+v_source_table VARCHAR2(128) := 'SALES';  -- Change to your table name
+v_schema_name VARCHAR2(128) := USER;      -- Change to target schema or leave as USER
+```
+
 ### Usage
 
 ```sql
+-- After editing the script with your table name and schema
 SQL> @generate_archive_setup.sql
-Enter the source table name (default: SALES): ORDERS
 ```
 
 ### Generated Output
@@ -240,13 +254,21 @@ demo-partition-exchange/
 ```sql
 -- Generate complete DDL setup for archiving a new table
 -- Creates archive table, staging table, and configuration INSERT
+
+-- IMPORTANT: Edit the script first to set:
+--   v_source_table := 'YOUR_TABLE_NAME';  -- Change this
+--   v_schema_name := 'YOUR_SCHEMA';       -- Change this or leave as USER
+
 SQL> @generate_archive_setup.sql
 
--- When prompted, enter your source table name (e.g., ORDERS)
 -- The script generates:
---   1. SNPARCH_ORDERS (archive table) - with all constraints, indexes, partitions
---   2. ORDERS_STAGING (staging table) - unpartitioned CTAS structure
+--   1. SNPARCH_YOUR_TABLE_NAME (archive table) - with all constraints, indexes, partitions
+--   2. SNPARCH_YOUR_TABLE_NAME_STAGING_TEMP (staging table) - unpartitioned CTAS structure
 --   3. INSERT statement for SNPARCH_CNF_PARTITION_ARCHIVE configuration
+
+-- Prerequisites:
+--   - SELECT_CATALOG_ROLE or SELECT ANY DICTIONARY privilege (for DBA_ views)
+--   - SELECT privilege on DBA_TABLES, DBA_CONSTRAINTS, DBA_INDEXES
 
 -- Review and execute the generated DDL
 ```

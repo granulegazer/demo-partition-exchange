@@ -3,7 +3,17 @@
 -- ========================================
 -- Generates DDL for archive table, staging table, and configuration
 -- Uses DBMS_METADATA for accurate DDL extraction
+-- Uses DBA_ views to access any schema (requires appropriate privileges)
 -- Usage: @generate_archive_setup.sql
+-- 
+-- Prerequisites:
+--   - SELECT_CATALOG_ROLE or SELECT ANY DICTIONARY privilege
+--   - SELECT privilege on DBA_TABLES, DBA_CONSTRAINTS, DBA_INDEXES, etc.
+--
+-- Configuration:
+--   - Set v_source_table to the table you want to archive
+--   - Set v_schema_name to the schema owner (default: USER)
+--
 -- Example: @generate_archive_setup.sql
 
 SET SERVEROUTPUT ON SIZE UNLIMITED
@@ -17,6 +27,7 @@ SET LONGCHUNKSIZE 100000
 
 DECLARE
     v_source_table VARCHAR2(128) := 'SALES';  -- Change this to your table name
+    v_schema_name VARCHAR2(128) := USER;      -- Change this to target schema or leave as USER
     v_archive_table VARCHAR2(128);
     v_staging_table VARCHAR2(128);
     v_table_ddl CLOB;
@@ -34,7 +45,7 @@ BEGIN
     v_staging_table := 'SNPARCH_' || v_source_table || '_STAGING_TEMP';
     
     DBMS_OUTPUT.PUT_LINE('================================================================================');
-    DBMS_OUTPUT.PUT_LINE('ARCHIVE SETUP GENERATOR FOR TABLE: ' || v_source_table);
+    DBMS_OUTPUT.PUT_LINE('ARCHIVE SETUP GENERATOR FOR TABLE: ' || v_schema_name || '.' || v_source_table);
     DBMS_OUTPUT.PUT_LINE('================================================================================');
     DBMS_OUTPUT.PUT_LINE('');
     
@@ -42,21 +53,23 @@ BEGIN
     BEGIN
         SELECT partitioned, tablespace_name
         INTO v_partitioned, v_tablespace
-        FROM user_tables
-        WHERE table_name = v_source_table;
+        FROM dba_tables
+        WHERE table_name = v_source_table
+          AND owner = v_schema_name;
     EXCEPTION
         WHEN NO_DATA_FOUND THEN
-            DBMS_OUTPUT.PUT_LINE('ERROR: Table ' || v_source_table || ' does not exist!');
+            DBMS_OUTPUT.PUT_LINE('ERROR: Table ' || v_schema_name || '.' || v_source_table || ' does not exist!');
             RETURN;
     END;
     
     -- Check if table is partitioned
     IF v_partitioned != 'YES' THEN
-        DBMS_OUTPUT.PUT_LINE('WARNING: Table ' || v_source_table || ' is not partitioned!');
+        DBMS_OUTPUT.PUT_LINE('WARNING: Table ' || v_schema_name || '.' || v_source_table || ' is not partitioned!');
         DBMS_OUTPUT.PUT_LINE('This script is designed for partitioned tables only.');
         DBMS_OUTPUT.PUT_LINE('');
     END IF;
     
+    DBMS_OUTPUT.PUT_LINE('-- Schema          : ' || v_schema_name);
     DBMS_OUTPUT.PUT_LINE('-- Source Table    : ' || v_source_table);
     DBMS_OUTPUT.PUT_LINE('-- Archive Table   : ' || v_archive_table);
     DBMS_OUTPUT.PUT_LINE('-- Staging Table   : ' || v_staging_table);
@@ -94,7 +107,7 @@ BEGIN
     DBMS_OUTPUT.PUT_LINE('');
     
     -- Get table DDL
-    v_table_ddl := DBMS_METADATA.GET_DDL('TABLE', v_source_table, USER);
+    v_table_ddl := DBMS_METADATA.GET_DDL('TABLE', v_source_table, v_schema_name);
     
     -- Replace table name with archive table name
     v_table_ddl := REPLACE(v_table_ddl, '"' || v_source_table || '"', '"' || v_archive_table || '"');
@@ -115,8 +128,9 @@ BEGIN
     -- ========================================
     SELECT COUNT(*)
     INTO v_num_constraints
-    FROM user_constraints
+    FROM dba_constraints
     WHERE table_name = v_source_table
+      AND owner = v_schema_name
       AND constraint_type IN ('P', 'U', 'C');
       
     IF v_num_constraints > 0 THEN
@@ -124,13 +138,14 @@ BEGIN
         
         FOR con IN (
             SELECT constraint_name
-            FROM user_constraints
+            FROM dba_constraints
             WHERE table_name = v_source_table
+              AND owner = v_schema_name
               AND constraint_type IN ('P', 'U', 'C')
             ORDER BY DECODE(constraint_type, 'P', 1, 'U', 2, 'C', 3)
         ) LOOP
             BEGIN
-                v_constraint_ddl := DBMS_METADATA.GET_DDL('CONSTRAINT', con.constraint_name, USER);
+                v_constraint_ddl := DBMS_METADATA.GET_DDL('CONSTRAINT', con.constraint_name, v_schema_name);
                 v_constraint_ddl := REPLACE(v_constraint_ddl, '"' || v_source_table || '"', '"' || v_archive_table || '"');
                 v_constraint_ddl := REPLACE(v_constraint_ddl, ' ' || v_source_table || ' ', ' ' || v_archive_table || ' ');
                 
@@ -159,20 +174,22 @@ BEGIN
     -- ========================================
     SELECT COUNT(*)
     INTO v_num_indexes
-    FROM user_indexes
-    WHERE table_name = v_source_table;
+    FROM dba_indexes
+    WHERE table_name = v_source_table
+      AND table_owner = v_schema_name;
       
     IF v_num_indexes > 0 THEN
         DBMS_OUTPUT.PUT_LINE('-- Indexes');
         
         FOR idx IN (
             SELECT index_name
-            FROM user_indexes
+            FROM dba_indexes
             WHERE table_name = v_source_table
+              AND table_owner = v_schema_name
             ORDER BY index_name
         ) LOOP
             BEGIN
-                v_index_ddl := DBMS_METADATA.GET_DDL('INDEX', idx.index_name, USER);
+                v_index_ddl := DBMS_METADATA.GET_DDL('INDEX', idx.index_name, v_schema_name);
                 v_index_ddl := REPLACE(v_index_ddl, '"' || v_source_table || '"', '"' || v_archive_table || '"');
                 v_index_ddl := REPLACE(v_index_ddl, ' ON ' || v_source_table || ' ', ' ON ' || v_archive_table || ' ');
                 v_index_ddl := REPLACE(v_index_ddl, ' ON ' || v_source_table || '(', ' ON ' || v_archive_table || '(');
@@ -225,16 +242,18 @@ BEGIN
     -- Get primary key columns
     FOR pk IN (
         SELECT constraint_name
-        FROM user_constraints
+        FROM dba_constraints
         WHERE table_name = v_source_table
+          AND owner = v_schema_name
           AND constraint_type = 'P'
     ) LOOP
         v_col_list := '';
         FOR col IN (
             SELECT column_name
-            FROM user_cons_columns
+            FROM dba_cons_columns
             WHERE constraint_name = pk.constraint_name
               AND table_name = v_source_table
+              AND owner = v_schema_name
             ORDER BY position
         ) LOOP
             IF v_col_list IS NOT NULL THEN
@@ -288,6 +307,7 @@ BEGIN
     DBMS_OUTPUT.PUT_LINE('SUMMARY');
     DBMS_OUTPUT.PUT_LINE('================================================================================');
     DBMS_OUTPUT.PUT_LINE('The following DDL has been generated using DBMS_METADATA:');
+    DBMS_OUTPUT.PUT_LINE('  Schema: ' || v_schema_name);
     DBMS_OUTPUT.PUT_LINE('  1. Archive table: ' || v_archive_table);
     DBMS_OUTPUT.PUT_LINE('     - Complete table structure from ' || v_source_table);
     DBMS_OUTPUT.PUT_LINE('     - ' || v_num_constraints || ' constraint(s)');
@@ -297,6 +317,7 @@ BEGIN
     DBMS_OUTPUT.PUT_LINE('');
     DBMS_OUTPUT.PUT_LINE('NOTES:');
     DBMS_OUTPUT.PUT_LINE('  - DDL extracted using DBMS_METADATA.GET_DDL for accuracy');
+    DBMS_OUTPUT.PUT_LINE('  - Script uses DBA_ views (requires appropriate privileges)');
     DBMS_OUTPUT.PUT_LINE('  - Review and adjust compression settings if needed');
     DBMS_OUTPUT.PUT_LINE('  - Review and adjust tablespace assignments if needed');
     DBMS_OUTPUT.PUT_LINE('  - Test the DDL in a development environment first');
