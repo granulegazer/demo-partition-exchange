@@ -14,14 +14,14 @@ A comprehensive demonstration of Oracle Database 19.26 partition exchange method
 - ✅ **Partition Validation** - Automatic check for partitioned tables
 - ✅ **Performance Metrics** - Track exchange duration and statistics gathering time
 - ✅ **DDL Generator** - Automated setup script generation for new tables
-- ✅ **Oracle 19.26 Optimized** - Uses latest syntax and features
+- ✅ **Modern Oracle Features** - Uses latest syntax and optimizations
 - ✅ **Production-Ready** - Comprehensive inline documentation and error handling
 
 ## Quick Start
 
 ### Prerequisites
 
-- Oracle Database 19c or higher (tested on 19.26)
+- Oracle Database 19c or higher
 - SQL*Plus or any Oracle SQL client
 - Database user with appropriate privileges:
   - CREATE TABLE
@@ -433,7 +433,7 @@ COMMIT;
 
 ## Key Features
 
-### Oracle 19.26 Optimizations
+### Modern Oracle Optimizations
 
 - **IDENTITY Columns** - Auto-incrementing PKs without sequences
 - **TIMESTAMP(6)** - Microsecond precision for accurate timing
@@ -544,7 +544,7 @@ SQL> @99_cleanup.sql
 1. The structure validation was bypassed or disabled
 2. The table structure changed after validation
 Common causes and solutions:
-- **Missing PRIMARY KEY on staging table**: The procedure automatically adds it, but if creating manually, ensure: `ALTER TABLE staging_table ADD CONSTRAINT pk_staging PRIMARY KEY (sale_id, sale_date);`
+- **Missing PRIMARY KEY on staging table**: Ensure the staging table has the same PRIMARY KEY as source table: `ALTER TABLE staging_table ADD CONSTRAINT pk_staging PRIMARY KEY (sale_id, sale_date);`
 - **Column mismatch detected**: The procedure will raise ORA-20016 (source vs archive) or ORA-20017 (source vs staging) during validation phase
 - **Data type differences**: Check the specific columns mentioned in the error and verify they match exactly across all three tables
 
