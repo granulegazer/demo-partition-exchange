@@ -914,24 +914,23 @@ BEGIN
                                    ' (Moved: ' || (v_source_records_before - v_source_records_after) || ')');
                 DBMS_OUTPUT.PUT_LINE('Archive Records: ' || v_archive_records_before || ' -> ' || v_archive_records_after || 
                                    ' (Added: ' || (v_archive_records_after - v_archive_records_before) || ')');
-            END IF;
-            
-            -- Drop the now-empty partition from main table
-            v_step := 100 + (i * 100) + 10;
-            v_sql := 'ALTER TABLE ' || p_table_name || ' DROP PARTITION ' || v_partition_name;
-            EXECUTE IMMEDIATE v_sql;
-            
-            prc_log_error_autonomous(v_proc_name, 'I', v_step, NULL, NULL, 
-                'Dropped source partition', v_partition_name, USER);
-            
-            DBMS_OUTPUT.PUT_LINE('Dropped partition: ' || v_partition_name);
-            
-            -- Log execution to control table
-            v_step := 100 + (i * 100) + 11;
-            v_total_duration := EXTRACT(SECOND FROM (SYSTIMESTAMP - v_exchange_start)) +
-                               EXTRACT(MINUTE FROM (SYSTIMESTAMP - v_exchange_start)) * 60;
-            
-            INSERT INTO snparch_ctl_execution_log (
+                
+                -- Drop the now-empty partition from main table
+                v_step := 100 + (i * 100) + 10;
+                v_sql := 'ALTER TABLE ' || p_table_name || ' DROP PARTITION ' || v_partition_name;
+                EXECUTE IMMEDIATE v_sql;
+                
+                prc_log_error_autonomous(v_proc_name, 'I', v_step, NULL, NULL, 
+                    'Dropped source partition', v_partition_name, USER);
+                
+                DBMS_OUTPUT.PUT_LINE('Dropped partition: ' || v_partition_name);
+                
+                -- Log execution to control table
+                v_step := 100 + (i * 100) + 11;
+                v_total_duration := EXTRACT(SECOND FROM (SYSTIMESTAMP - v_exchange_start)) +
+                                   EXTRACT(MINUTE FROM (SYSTIMESTAMP - v_exchange_start)) * 60;
+                
+                INSERT INTO snparch_ctl_execution_log (
                 execution_date,
                 source_table_name,
                 archive_table_name,
@@ -995,10 +994,23 @@ BEGIN
                 'Logged execution to control table', 
                 'Partition: ' || v_partition_name || ' -> ' || v_archive_partition_name, USER);
             
-            DBMS_OUTPUT.PUT_LINE('-------------------------------------------');
-            
-            v_partitions_archived := v_partitions_archived + 1;
-            COMMIT;
+                DBMS_OUTPUT.PUT_LINE('-------------------------------------------');
+                
+                v_partitions_archived := v_partitions_archived + 1;
+                COMMIT;
+            ELSE
+                -- Handle empty partition - just drop it without archiving
+                v_step := 100 + (i * 100) + 10;
+                v_sql := 'ALTER TABLE ' || p_table_name || ' DROP PARTITION ' || v_partition_name;
+                EXECUTE IMMEDIATE v_sql;
+                
+                prc_log_error_autonomous(v_proc_name, 'I', v_step, NULL, NULL, 
+                    'Dropped empty source partition', v_partition_name || ' (0 records)', USER);
+                
+                DBMS_OUTPUT.PUT_LINE('Dropped empty partition: ' || v_partition_name);
+                DBMS_OUTPUT.PUT_LINE('-------------------------------------------');
+                COMMIT;
+            END IF;
             
         EXCEPTION
             WHEN OTHERS THEN
