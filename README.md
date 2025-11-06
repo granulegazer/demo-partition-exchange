@@ -443,6 +443,8 @@ COMMIT;
 - **Compression Detection** - Automatic detection of partition compression status
 - **DBMS_METADATA** - Automated DDL extraction for archive setup generation
 - **LOCAL Index Exchange** - Automatic index segment exchange during partition exchange
+- **INCLUDING INDEXES** - Maintains index usability during partition exchanges
+- **UNUSABLE Index Detection** - Checks for and rebuilds both INVALID and UNUSABLE indexes
 
 ### Data Validation & Integrity
 
@@ -455,7 +457,8 @@ COMMIT;
   - Raises specific error codes for each validation failure (ORA-20010 through ORA-20018)
 - **Partition Validation** - Procedure checks if table is partitioned, throws exception if not
 - **Record Count Validation** - Automatic before/after comparison to detect data loss
-- **Index Health Tracking** - Monitor invalid indexes before and after exchange
+- **Index Health Tracking** - Monitor invalid and unusable indexes before and after exchange
+- **Automatic Index Rebuild** - Detects and rebuilds both INVALID and UNUSABLE indexes
 - **Data Validation Status** - PASS/FAIL indicator for each exchange
 - **Warning Status** - Validation failures change status to WARNING for manual review
 
@@ -538,6 +541,12 @@ SQL> @99_cleanup.sql
 5. Create a Pull Request
 
 ## Common Issues & Solutions
+
+**Q: ORA-01502: index <index_name> or partition of such index is in unusable state**  
+**A:** The procedure now handles this automatically in two ways:
+1. **Prevention**: Uses `INCLUDING INDEXES` clause in EXCHANGE PARTITION commands to maintain index usability during exchanges
+2. **Detection & Repair**: Checks for both INVALID and UNUSABLE indexes before and after exchange, automatically rebuilding any found
+If you still encounter this error, the index became unusable outside of the archival process. Manually rebuild: `ALTER INDEX index_name REBUILD;`
 
 **Q: ORA-14097: column type or size mismatch in ALTER TABLE EXCHANGE PARTITION**  
 **A:** The procedure now automatically validates table structure before attempting exchange. If you see this error, it means:

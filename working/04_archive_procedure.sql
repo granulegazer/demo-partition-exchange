@@ -187,9 +187,11 @@ CREATE OR REPLACE PROCEDURE archive_partitions_by_dates (
     
     Performance Considerations:
         - Both exchange operations are INSTANT (metadata-only)
+        - INCLUDING INDEXES ensures indexes remain usable after exchange
         - WITHOUT VALIDATION clause for faster exchange
         - Statistics gathering uses AUTO_DEGREE for parallelism
         - Index validation optional to reduce overhead
+        - Automatically rebuilds any INVALID or UNUSABLE indexes detected
     
     Dependencies:
         - Function: get_partition_name_by_date
@@ -233,8 +235,10 @@ CREATE OR REPLACE PROCEDURE archive_partitions_by_dates (
         - Source partitions are DROPPED after successful exchange
         - Archive partitions are created automatically if they don't exist
         - No physical data movement - both exchanges are metadata operations
-        - Indexes are exchanged automatically with partitions
+        - Indexes are exchanged automatically with partitions using INCLUDING INDEXES clause
         - LOCAL indexes become regular indexes on staging, then back to LOCAL on archive
+        - Index validation checks for both INVALID and UNUSABLE statuses
+        - Any unusable indexes are automatically rebuilt before and after exchanges
         - Transaction committed after each date to avoid long-running transactions
     
     Version History:
@@ -607,12 +611,12 @@ BEGIN
     IF v_validate_before = 'Y' THEN
         v_step := 5;
         
-        -- Check for invalid indexes on source table
+        -- Check for invalid/unusable indexes on source table
         SELECT COUNT(*)
         INTO v_invalid_indexes
         FROM user_indexes
         WHERE table_name = UPPER(p_table_name)
-          AND status != 'VALID';
+          AND (status != 'VALID' OR status = 'UNUSABLE');
           
         IF v_invalid_indexes > 0 THEN
             prc_log_error_autonomous(v_proc_name, 'E', v_step, NULL, NULL, 
@@ -620,12 +624,12 @@ BEGIN
                 'Table: ' || p_table_name || ', Count: ' || v_invalid_indexes, USER);
             DBMS_OUTPUT.PUT_LINE('WARNING: ' || v_invalid_indexes || ' invalid indexes found on ' || p_table_name);
             
-            -- Rebuild invalid indexes
+            -- Rebuild invalid/unusable indexes
             FOR idx IN (
                 SELECT index_name 
                 FROM user_indexes 
                 WHERE table_name = UPPER(p_table_name)
-                  AND status != 'VALID'
+                  AND (status != 'VALID' OR status = 'UNUSABLE')
             ) LOOP
                 BEGIN
                     DBMS_OUTPUT.PUT_LINE('Rebuilding index: ' || idx.index_name);
@@ -643,12 +647,12 @@ BEGIN
                 'All indexes valid on source', 'Table: ' || p_table_name, USER);
         END IF;
         
-        -- Check for invalid indexes on archive table
+        -- Check for invalid/unusable indexes on archive table
         SELECT COUNT(*)
         INTO v_invalid_indexes
         FROM user_indexes
         WHERE table_name = UPPER(v_archive_table_name)
-          AND status != 'VALID';
+          AND (status != 'VALID' OR status = 'UNUSABLE');
           
         IF v_invalid_indexes > 0 THEN
             prc_log_error_autonomous(v_proc_name, 'E', v_step, NULL, NULL, 
@@ -656,12 +660,12 @@ BEGIN
                 'Table: ' || v_archive_table_name || ', Count: ' || v_invalid_indexes, USER);
             DBMS_OUTPUT.PUT_LINE('WARNING: ' || v_invalid_indexes || ' invalid indexes found on ' || v_archive_table_name);
             
-            -- Rebuild invalid indexes
+            -- Rebuild invalid/unusable indexes
             FOR idx IN (
                 SELECT index_name 
                 FROM user_indexes 
                 WHERE table_name = UPPER(v_archive_table_name)
-                  AND status != 'VALID'
+                  AND (status != 'VALID' OR status = 'UNUSABLE')
             ) LOOP
                 BEGIN
                     DBMS_OUTPUT.PUT_LINE('Rebuilding index: ' || idx.index_name);
@@ -775,7 +779,7 @@ BEGIN
                 v_sql := 'ALTER TABLE ' || p_table_name || 
                          ' EXCHANGE PARTITION ' || v_partition_name || 
                          ' WITH TABLE ' || v_staging_table || 
-                         ' WITHOUT VALIDATION';
+                         ' INCLUDING INDEXES WITHOUT VALIDATION';
                 EXECUTE IMMEDIATE v_sql;
                 
                 prc_log_error_autonomous(v_proc_name, 'I', v_step, NULL, NULL, 
@@ -815,9 +819,10 @@ BEGIN
                 v_sql := 'ALTER TABLE ' || v_archive_table_name ||
                          ' EXCHANGE PARTITION ' || v_archive_partition_name ||
                          ' WITH TABLE ' || v_staging_table || 
-                         ' WITHOUT VALIDATION';
+                         ' INCLUDING INDEXES WITHOUT VALIDATION';
                 EXECUTE IMMEDIATE v_sql;
                 
+                v_step := 100 + (i * 100) + 8;
                 v_exchange_end := SYSTIMESTAMP;
                 v_exchange_duration := EXTRACT(SECOND FROM (v_exchange_end - v_exchange_start)) +
                                       EXTRACT(MINUTE FROM (v_exchange_end - v_exchange_start)) * 60;
@@ -860,7 +865,7 @@ BEGIN
                 v_total_archived := v_total_archived + v_count;
                 
                 -- Collect metrics AFTER exchange
-                v_step := 100 + (i * 100) + 8;
+                v_step := 100 + (i * 100) + 9;
                 
                 -- Get source table record count after exchange
                 EXECUTE IMMEDIATE 'SELECT COUNT(*) FROM ' || p_table_name INTO v_source_records_after;
@@ -912,7 +917,7 @@ BEGIN
             END IF;
             
             -- Drop the now-empty partition from main table
-            v_step := 100 + (i * 100) + 9;
+            v_step := 100 + (i * 100) + 10;
             v_sql := 'ALTER TABLE ' || p_table_name || ' DROP PARTITION ' || v_partition_name;
             EXECUTE IMMEDIATE v_sql;
             
@@ -922,7 +927,7 @@ BEGIN
             DBMS_OUTPUT.PUT_LINE('Dropped partition: ' || v_partition_name);
             
             -- Log execution to control table
-            v_step := 100 + (i * 100) + 10;
+            v_step := 100 + (i * 100) + 11;
             v_total_duration := EXTRACT(SECOND FROM (SYSTIMESTAMP - v_exchange_start)) +
                                EXTRACT(MINUTE FROM (SYSTIMESTAMP - v_exchange_start)) * 60;
             
