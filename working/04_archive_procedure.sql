@@ -826,6 +826,29 @@ BEGIN
                          ' WITHOUT VALIDATION';
                 EXECUTE IMMEDIATE v_sql;
                 
+                -- Rebuild unusable indexes on archive partition immediately after exchange
+                FOR idx IN (
+                    SELECT i.index_name, ip.partition_name
+                    FROM user_ind_partitions ip
+                    JOIN user_indexes i ON ip.index_name = i.index_name
+                    WHERE i.table_name = UPPER(v_archive_table_name)
+                      AND ip.partition_name = v_archive_partition_name
+                      AND ip.status = 'UNUSABLE'
+                ) LOOP
+                    BEGIN
+                        EXECUTE IMMEDIATE 'ALTER INDEX ' || idx.index_name || 
+                                        ' REBUILD PARTITION ' || idx.partition_name;
+                        prc_log_error_autonomous(v_proc_name, 'I', v_step, NULL, NULL, 
+                            'Rebuilt unusable index partition', 
+                            idx.index_name || '.' || idx.partition_name, USER);
+                    EXCEPTION
+                        WHEN OTHERS THEN
+                            prc_log_error_autonomous(v_proc_name, 'E', v_step, SQLCODE, SQLERRM, 
+                                'Error rebuilding index partition', 
+                                idx.index_name || '.' || idx.partition_name, USER);
+                    END;
+                END LOOP;
+                
                 v_step := 100 + (i * 100) + 8;
                 v_exchange_end := SYSTIMESTAMP;
                 v_exchange_duration := EXTRACT(SECOND FROM (v_exchange_end - v_exchange_start)) +
