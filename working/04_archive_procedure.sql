@@ -774,7 +774,7 @@ BEGIN
                 -- Clean up staging table indexes before exchange (except PRIMARY KEY)
                 -- This ensures clean state for partition exchange
                 FOR idx IN (
-                    SELECT index_name, constraint_name
+                    SELECT index_name
                     FROM user_indexes
                     WHERE table_name = UPPER(v_staging_table)
                       AND index_name NOT IN (
