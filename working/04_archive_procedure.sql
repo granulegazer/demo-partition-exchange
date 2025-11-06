@@ -771,40 +771,19 @@ BEGIN
                     ', Src Idx: ' || v_source_index_count || ', Invalid Idx: ' || v_invalid_indexes_before, 
                     USER);
                 
-                -- Ensure staging table is empty and clean before exchange
+                -- Ensure staging table is empty before exchange
                 EXECUTE IMMEDIATE 'TRUNCATE TABLE ' || v_staging_table;
                 
-                -- Drop all non-PK indexes from staging table to ensure clean state
-                FOR idx IN (
-                    SELECT index_name
-                    FROM user_indexes
-                    WHERE table_name = UPPER(v_staging_table)
-                      AND index_name NOT IN (
-                          SELECT index_name 
-                          FROM user_constraints 
-                          WHERE table_name = UPPER(v_staging_table) 
-                            AND constraint_type IN ('P', 'U')
-                            AND index_name IS NOT NULL
-                      )
-                ) LOOP
-                    BEGIN
-                        EXECUTE IMMEDIATE 'DROP INDEX ' || idx.index_name;
-                    EXCEPTION
-                        WHEN OTHERS THEN
-                            NULL; -- Ignore errors dropping indexes
-                    END;
-                END LOOP;
-                
                 -- Step 1: Exchange partition from main to staging (instant)
-                -- Note: Using pre-configured staging table from config
-                -- Using INCLUDING INDEXES to maintain index usability
+                -- Note: NOT using INCLUDING INDEXES because staging has regular indexes
+                -- while partitions have LOCAL indexes - this causes ORA-14098
                 v_step := 100 + (i * 100) + 5;
                 v_exchange_start := SYSTIMESTAMP;
                 
                 v_sql := 'ALTER TABLE ' || p_table_name || 
                          ' EXCHANGE PARTITION ' || v_partition_name || 
                          ' WITH TABLE ' || v_staging_table || 
-                         ' INCLUDING INDEXES WITHOUT VALIDATION';
+                         ' WITHOUT VALIDATION';
                 EXECUTE IMMEDIATE v_sql;
                 
                 prc_log_error_autonomous(v_proc_name, 'I', v_step, NULL, NULL, 
@@ -844,7 +823,7 @@ BEGIN
                 v_sql := 'ALTER TABLE ' || v_archive_table_name ||
                          ' EXCHANGE PARTITION ' || v_archive_partition_name ||
                          ' WITH TABLE ' || v_staging_table || 
-                         ' INCLUDING INDEXES WITHOUT VALIDATION';
+                         ' WITHOUT VALIDATION';
                 EXECUTE IMMEDIATE v_sql;
                 
                 v_step := 100 + (i * 100) + 8;
