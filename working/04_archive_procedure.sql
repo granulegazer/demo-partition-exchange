@@ -132,14 +132,11 @@ CREATE OR REPLACE PROCEDURE archive_partitions_by_dates (
         
         3. Partition Exchange (for each date):
            a. Find partition name for the date
-           b. Create staging table (CTAS with WHERE 1=0)
-           c. Add primary key to staging table
-           d. Exchange source partition → staging table (INSTANT)
-           e. Exchange staging table → archive partition (INSTANT)
-           f. Collect post-exchange metrics
-           g. Validate data integrity (record counts)
-           h. Drop staging table
-           i. Drop empty source partition
+           b. Exchange source partition → staging table (INSTANT, using pre-configured staging)
+           c. Exchange staging table → archive partition (INSTANT)
+           d. Collect post-exchange metrics
+           e. Validate data integrity (record counts)
+           f. Drop empty source partition
         
         4. Post-Exchange Actions:
            - Validate index status (if validate_before_exchange = Y)
@@ -172,7 +169,6 @@ CREATE OR REPLACE PROCEDURE archive_partitions_by_dates (
     Error Handling:
         - Graceful handling of missing partitions (logs warning, continues with remaining dates)
         - Invalid indexes are automatically rebuilt before exchange
-        - Staging table cleanup in exception handler
         - Detailed error logging via prc_log_error_autonomous
         - Specific exceptions for common errors:
           * e_table_not_partitioned: Source table is not partitioned
@@ -233,6 +229,7 @@ CREATE OR REPLACE PROCEDURE archive_partitions_by_dates (
         - Final summary with totals
     
     Notes:
+        - Staging table is pre-configured in SNPARCH_CNF_PARTITION_ARCHIVE and reused for all exchanges
         - Source partitions are DROPPED after successful exchange
         - Archive partitions are created automatically if they don't exist
         - No physical data movement - both exchanges are metadata operations
