@@ -771,6 +771,31 @@ BEGIN
                     ', Src Idx: ' || v_source_index_count || ', Invalid Idx: ' || v_invalid_indexes_before, 
                     USER);
                 
+                -- Clean up staging table indexes before exchange (except PRIMARY KEY)
+                -- This ensures clean state for partition exchange
+                FOR idx IN (
+                    SELECT index_name, constraint_name
+                    FROM user_indexes
+                    WHERE table_name = UPPER(v_staging_table)
+                      AND index_name NOT IN (
+                          SELECT index_name 
+                          FROM user_constraints 
+                          WHERE table_name = UPPER(v_staging_table) 
+                            AND constraint_type IN ('P', 'U')
+                            AND index_name IS NOT NULL
+                      )
+                ) LOOP
+                    BEGIN
+                        EXECUTE IMMEDIATE 'DROP INDEX ' || idx.index_name;
+                        prc_log_error_autonomous(v_proc_name, 'I', v_step, NULL, NULL, 
+                            'Dropped staging index', idx.index_name, USER);
+                    EXCEPTION
+                        WHEN OTHERS THEN
+                            prc_log_error_autonomous(v_proc_name, 'E', v_step, SQLCODE, SQLERRM, 
+                                'Error dropping staging index', idx.index_name, USER);
+                    END;
+                END LOOP;
+                
                 -- Step 1: Exchange partition from main to staging (instant)
                 -- Note: Using pre-configured staging table from config
                 v_step := 100 + (i * 100) + 5;
