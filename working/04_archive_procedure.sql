@@ -770,26 +770,9 @@ BEGIN
                     ', Src Idx: ' || v_source_index_count || ', Invalid Idx: ' || v_invalid_indexes_before, 
                     USER);
                 
-                -- Create temporary staging table from template
-                v_step := 100 + (i * 100) + 5;
-                v_sql := 'CREATE TABLE ' || v_staging_table || 
-                         ' AS SELECT * FROM ' || p_table_name || ' WHERE 1=0';
-                EXECUTE IMMEDIATE v_sql;
-                
-                prc_log_error_autonomous(v_proc_name, 'I', v_step, NULL, NULL, 
-                    'Created staging table', v_staging_table, USER);
-                
-                -- Add primary key constraint to match source table
-                v_step := 100 + (i * 100) + 6;
-                EXECUTE IMMEDIATE 'ALTER TABLE ' || v_staging_table || 
-                                ' ADD CONSTRAINT pk_staging_temp PRIMARY KEY (sale_id, sale_date)';
-                
-                prc_log_error_autonomous(v_proc_name, 'I', v_step, NULL, NULL, 
-                    'Added primary key to staging table', v_staging_table, USER);
-                
                 -- Step 1: Exchange partition from main to staging (instant)
-                -- Note: No indexes on staging - they will be exchanged automatically
-                v_step := 100 + (i * 100) + 7;
+                -- Note: Using pre-configured staging table from config
+                v_step := 100 + (i * 100) + 5;
                 v_exchange_start := SYSTIMESTAMP;
                 
                 v_sql := 'ALTER TABLE ' || p_table_name || 
@@ -804,7 +787,7 @@ BEGIN
                 DBMS_OUTPUT.PUT_LINE('Step 1: Partition moved to staging table (instant)');
                 
                 -- Step 2: Exchange staging with archive partition (instant)
-                v_step := 100 + (i * 100) + 8;
+                v_step := 100 + (i * 100) + 6;
                 IF v_archive_partition_name IS NULL THEN
                     prc_log_error_autonomous(v_proc_name, 'I', v_step, NULL, NULL, 
                         'Archive partition not found, creating', 'Date: ' || TO_CHAR(p_dates(i), 'YYYY-MM-DD'), USER);
@@ -831,7 +814,7 @@ BEGIN
                     COMMIT;
                 END IF;
                 
-                v_step := 100 + (i * 100) + 9;
+                v_step := 100 + (i * 100) + 7;
                 v_sql := 'ALTER TABLE ' || v_archive_table_name ||
                          ' EXCHANGE PARTITION ' || v_archive_partition_name ||
                          ' WITH TABLE ' || v_staging_table || 
@@ -880,7 +863,7 @@ BEGIN
                 v_total_archived := v_total_archived + v_count;
                 
                 -- Collect metrics AFTER exchange
-                v_step := 100 + (i * 100) + 10;
+                v_step := 100 + (i * 100) + 8;
                 
                 -- Get source table record count after exchange
                 EXECUTE IMMEDIATE 'SELECT COUNT(*) FROM ' || p_table_name INTO v_source_records_after;
@@ -929,17 +912,10 @@ BEGIN
                                    ' (Moved: ' || (v_source_records_before - v_source_records_after) || ')');
                 DBMS_OUTPUT.PUT_LINE('Archive Records: ' || v_archive_records_before || ' -> ' || v_archive_records_after || 
                                    ' (Added: ' || (v_archive_records_after - v_archive_records_before) || ')');
-                
-                -- Drop staging table
-                v_step := 100 + (i * 100) + 11;
-                EXECUTE IMMEDIATE 'DROP TABLE ' || v_staging_table;
-                
-                prc_log_error_autonomous(v_proc_name, 'I', v_step, NULL, NULL, 
-                    'Dropped staging table', v_staging_table, USER);
             END IF;
             
             -- Drop the now-empty partition from main table
-            v_step := 100 + (i * 100) + 12;
+            v_step := 100 + (i * 100) + 9;
             v_sql := 'ALTER TABLE ' || p_table_name || ' DROP PARTITION ' || v_partition_name;
             EXECUTE IMMEDIATE v_sql;
             
@@ -949,7 +925,7 @@ BEGIN
             DBMS_OUTPUT.PUT_LINE('Dropped partition: ' || v_partition_name);
             
             -- Log execution to control table
-            v_step := 100 + (i * 100) + 13;
+            v_step := 100 + (i * 100) + 10;
             v_total_duration := EXTRACT(SECOND FROM (SYSTIMESTAMP - v_exchange_start)) +
                                EXTRACT(MINUTE FROM (SYSTIMESTAMP - v_exchange_start)) * 60;
             
@@ -1029,11 +1005,6 @@ BEGIN
                     
                 DBMS_OUTPUT.PUT_LINE('ERROR processing date ' || 
                                    TO_CHAR(p_dates(i), 'YYYY-MM-DD') || ': ' || SQLERRM);
-                -- Clean up if staging exists
-                BEGIN
-                    EXECUTE IMMEDIATE 'DROP TABLE ' || v_staging_table;
-                EXCEPTION WHEN OTHERS THEN NULL;
-                END;
                 ROLLBACK;
         END;
     END LOOP;
