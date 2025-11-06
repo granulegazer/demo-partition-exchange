@@ -83,7 +83,6 @@ END;
 
 -- ========================================
 -- ARCHIVE PROCEDURE: Multiple Dates Support with Validation
--- Oracle 19.26 Optimized
 -- ========================================
 
 CREATE OR REPLACE PROCEDURE archive_partitions_by_dates (
@@ -211,9 +210,7 @@ CREATE OR REPLACE PROCEDURE archive_partitions_by_dates (
                 p_table_name => 'SALES',
                 p_dates => date_array_type(DATE '2024-01-15')
             );
-        END;
-        /
-        
+        END;        
         -- Archive multiple dates
         BEGIN
             archive_partitions_by_dates(
@@ -225,8 +222,6 @@ CREATE OR REPLACE PROCEDURE archive_partitions_by_dates (
                 )
             );
         END;
-        /
-    
     Output (DBMS_OUTPUT):
         - Configuration details
         - Before/after table statistics
@@ -246,7 +241,7 @@ CREATE OR REPLACE PROCEDURE archive_partitions_by_dates (
         - Transaction committed after each date to avoid long-running transactions
     
     Version History:
-        - Oracle 19.26: Optimized with IDENTITY columns, TIMESTAMP(6), enhanced metrics
+        - Optimized with IDENTITY columns, TIMESTAMP(6), enhanced metrics
         - Added comprehensive data validation
         - Added index size tracking
         - Added before/after record count validation
@@ -271,7 +266,7 @@ CREATE OR REPLACE PROCEDURE archive_partitions_by_dates (
     v_proc_name VARCHAR2(30) := 'ARCHIVE_PARTITIONS';
     v_stats VARCHAR2(4000);
     
-    -- Execution logging variables (Oracle 19.26)
+    -- Execution logging variables
     v_execution_start TIMESTAMP(6);
     v_execution_end TIMESTAMP(6);
     v_exchange_start TIMESTAMP(6);
@@ -341,7 +336,7 @@ BEGIN
             RAISE_APPLICATION_ERROR(-20001, 'Table ' || p_table_name || ' does not exist');
     END;
     
-    v_step := v_step + 1;
+    v_step := 2;
     
     -- Get configuration for this table to retrieve archive and staging table names
     BEGIN
@@ -386,7 +381,7 @@ BEGIN
         USER);
     
     -- Validate table structure compatibility for partition exchange
-    v_step := v_step + 1;
+    v_step := 3;
     DECLARE
         v_source_columns NUMBER := 0;
         v_archive_columns NUMBER := 0;
@@ -590,7 +585,7 @@ BEGIN
     END;
     
     -- Get initial table stats
-    v_step := v_step + 1;
+    v_step := 4;
     v_stats := f_degrag_get_table_size_stats_util(p_table_name);
     prc_log_error_autonomous(v_proc_name, 'I', v_step, NULL, NULL, 
         'Starting partition archiving', 'Table: ' || p_table_name || ', Dates: ' || p_dates.COUNT, USER);
@@ -613,7 +608,7 @@ BEGIN
     
     -- Validate indexes before exchange if configured
     IF v_validate_before = 'Y' THEN
-        v_step := v_step + 1;
+        v_step := 5;
         
         -- Check for invalid indexes on source table
         SELECT COUNT(*)
@@ -697,7 +692,7 @@ BEGIN
     -- Process each date
     FOR i IN 1..p_dates.COUNT LOOP
         BEGIN
-            v_step := v_step + 1;
+            v_step := 100 + (i * 100);  -- Step 100, 200, 300, etc. for each date iteration
             prc_log_error_autonomous(v_proc_name, 'I', v_step, NULL, NULL, 
                 'Processing date', TO_CHAR(p_dates(i), 'YYYY-MM-DD'), USER);
             
@@ -705,7 +700,7 @@ BEGIN
             v_partition_name := get_partition_name_by_date(p_table_name, p_dates(i));
             
             IF v_partition_name IS NULL THEN
-                v_step := v_step + 1;
+                v_step := 100 + (i * 100) + 1;
                 prc_log_error_autonomous(v_proc_name, 'I', v_step, NULL, NULL, 
                     'No partition found for date', TO_CHAR(p_dates(i), 'YYYY-MM-DD'), USER);
                     
@@ -715,7 +710,7 @@ BEGIN
                 CONTINUE;
             END IF;
             
-            v_step := v_step + 1;
+            v_step := 100 + (i * 100) + 2;
             prc_log_error_autonomous(v_proc_name, 'I', v_step, NULL, NULL, 
                 'Found partition', 'Partition: ' || v_partition_name || ', Date: ' || TO_CHAR(p_dates(i), 'YYYY-MM-DD'), USER);
             
@@ -726,7 +721,7 @@ BEGIN
             v_archive_partition_name := get_partition_name_by_date(v_archive_table_name, p_dates(i));
             
             -- Count records in partition
-            v_step := v_step + 1;
+            v_step := 100 + (i * 100) + 3;
             v_sql := 'SELECT COUNT(*) FROM ' || p_table_name || 
                      ' PARTITION (' || v_partition_name || ')';
             EXECUTE IMMEDIATE v_sql INTO v_count;
@@ -738,7 +733,7 @@ BEGIN
             
             IF v_count > 0 THEN
                 -- Collect metrics BEFORE exchange
-                v_step := v_step + 1;
+                v_step := 100 + (i * 100) + 4;
                 
                 -- Get source table record count
                 EXECUTE IMMEDIATE 'SELECT COUNT(*) FROM ' || p_table_name INTO v_source_records_before;
@@ -776,7 +771,7 @@ BEGIN
                     USER);
                 
                 -- Create temporary staging table from template
-                v_step := v_step + 1;
+                v_step := 100 + (i * 100) + 5;
                 v_sql := 'CREATE TABLE ' || v_staging_table || 
                          ' AS SELECT * FROM ' || p_table_name || ' WHERE 1=0';
                 EXECUTE IMMEDIATE v_sql;
@@ -785,7 +780,7 @@ BEGIN
                     'Created staging table', v_staging_table, USER);
                 
                 -- Add primary key constraint to match source table
-                v_step := v_step + 1;
+                v_step := 100 + (i * 100) + 6;
                 EXECUTE IMMEDIATE 'ALTER TABLE ' || v_staging_table || 
                                 ' ADD CONSTRAINT pk_staging_temp PRIMARY KEY (sale_id, sale_date)';
                 
@@ -794,7 +789,7 @@ BEGIN
                 
                 -- Step 1: Exchange partition from main to staging (instant)
                 -- Note: No indexes on staging - they will be exchanged automatically
-                v_step := v_step + 1;
+                v_step := 100 + (i * 100) + 7;
                 v_exchange_start := SYSTIMESTAMP;
                 
                 v_sql := 'ALTER TABLE ' || p_table_name || 
@@ -809,7 +804,7 @@ BEGIN
                 DBMS_OUTPUT.PUT_LINE('Step 1: Partition moved to staging table (instant)');
                 
                 -- Step 2: Exchange staging with archive partition (instant)
-                v_step := v_step + 1;
+                v_step := 100 + (i * 100) + 8;
                 IF v_archive_partition_name IS NULL THEN
                     prc_log_error_autonomous(v_proc_name, 'I', v_step, NULL, NULL, 
                         'Archive partition not found, creating', 'Date: ' || TO_CHAR(p_dates(i), 'YYYY-MM-DD'), USER);
@@ -836,7 +831,7 @@ BEGIN
                     COMMIT;
                 END IF;
                 
-                v_step := v_step + 1;
+                v_step := 100 + (i * 100) + 9;
                 v_sql := 'ALTER TABLE ' || v_archive_table_name ||
                          ' EXCHANGE PARTITION ' || v_archive_partition_name ||
                          ' WITH TABLE ' || v_staging_table || 
@@ -852,7 +847,7 @@ BEGIN
                 
                 DBMS_OUTPUT.PUT_LINE('Step 2: Data moved to archive (instant)');
                 
-                -- Get partition size (Oracle 19.26 optimized query)
+                -- Get partition size
                 BEGIN
                     SELECT ROUND(bytes / 1024 / 1024, 2)
                     INTO v_partition_size_mb
@@ -865,7 +860,7 @@ BEGIN
                         v_partition_size_mb := NULL;
                 END;
                 
-                -- Check if partition is compressed (Oracle 19.26)
+                -- Check if partition is compressed
                 BEGIN
                     SELECT 
                         CASE WHEN compression = 'ENABLED' THEN 'Y' ELSE 'N' END,
@@ -885,7 +880,7 @@ BEGIN
                 v_total_archived := v_total_archived + v_count;
                 
                 -- Collect metrics AFTER exchange
-                v_step := v_step + 1;
+                v_step := 100 + (i * 100) + 10;
                 
                 -- Get source table record count after exchange
                 EXECUTE IMMEDIATE 'SELECT COUNT(*) FROM ' || p_table_name INTO v_source_records_after;
@@ -936,7 +931,7 @@ BEGIN
                                    ' (Added: ' || (v_archive_records_after - v_archive_records_before) || ')');
                 
                 -- Drop staging table
-                v_step := v_step + 1;
+                v_step := 100 + (i * 100) + 11;
                 EXECUTE IMMEDIATE 'DROP TABLE ' || v_staging_table;
                 
                 prc_log_error_autonomous(v_proc_name, 'I', v_step, NULL, NULL, 
@@ -944,7 +939,7 @@ BEGIN
             END IF;
             
             -- Drop the now-empty partition from main table
-            v_step := v_step + 1;
+            v_step := 100 + (i * 100) + 12;
             v_sql := 'ALTER TABLE ' || p_table_name || ' DROP PARTITION ' || v_partition_name;
             EXECUTE IMMEDIATE v_sql;
             
@@ -953,8 +948,8 @@ BEGIN
             
             DBMS_OUTPUT.PUT_LINE('Dropped partition: ' || v_partition_name);
             
-            -- Log execution to control table (Oracle 19.26 with IDENTITY column)
-            v_step := v_step + 1;
+            -- Log execution to control table
+            v_step := 100 + (i * 100) + 13;
             v_total_duration := EXTRACT(SECOND FROM (SYSTIMESTAMP - v_exchange_start)) +
                                EXTRACT(MINUTE FROM (SYSTIMESTAMP - v_exchange_start)) * 60;
             
@@ -1044,7 +1039,7 @@ BEGIN
     END LOOP;
     
     -- Post-exchange validation and statistics gathering
-    v_step := v_step + 1;
+    v_step := 50;
     
     -- Validate indexes after exchange if configured
     IF v_validate_before = 'Y' THEN
@@ -1087,14 +1082,14 @@ BEGIN
     
     -- Gather statistics if configured
     IF v_gather_stats_after = 'Y' THEN
-        v_step := v_step + 1;
+        v_step := 51;
         v_stats_start := SYSTIMESTAMP;
         
         DBMS_OUTPUT.PUT_LINE('Gathering statistics on ' || p_table_name || '...');
         prc_log_error_autonomous(v_proc_name, 'I', v_step, NULL, NULL, 
             'Gathering statistics', 'Table: ' || p_table_name, USER);
             
-        -- Oracle 19.26 optimized statistics gathering with AUTO features
+        -- Optimized statistics gathering with AUTO features
         DBMS_STATS.GATHER_TABLE_STATS(
             ownname => USER,
             tabname => UPPER(p_table_name),
@@ -1107,12 +1102,12 @@ BEGIN
         
         DBMS_OUTPUT.PUT_LINE('Statistics gathered on ' || p_table_name);
         
-        v_step := v_step + 1;
+        v_step := 52;
         DBMS_OUTPUT.PUT_LINE('Gathering statistics on ' || v_archive_table_name || '...');
         prc_log_error_autonomous(v_proc_name, 'I', v_step, NULL, NULL, 
             'Gathering statistics', 'Table: ' || v_archive_table_name, USER);
             
-        -- Oracle 19.26 optimized statistics gathering with AUTO features
+        -- Optimized statistics gathering with AUTO features
         DBMS_STATS.GATHER_TABLE_STATS(
             ownname => USER,
             tabname => UPPER(v_archive_table_name),
@@ -1143,7 +1138,7 @@ BEGIN
     END IF;
     
     
-    v_step := v_step + 1;
+    v_step := 60;
     
     -- Get final table stats
     v_stats := f_degrag_get_table_size_stats_util(p_table_name);
