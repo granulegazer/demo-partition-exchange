@@ -359,7 +359,7 @@ BEGIN
         FROM snparch_cnf_partition_archive
         WHERE source_table_name = UPPER(p_table_name)
         AND staging_table_name IS NOT NULL
-        AND is_active = 'Y'
+        AND is_active = 'Y';
           
     EXCEPTION
         WHEN NO_DATA_FOUND THEN
