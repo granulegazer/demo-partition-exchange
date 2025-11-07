@@ -802,7 +802,7 @@ BEGIN
                 prc_log_error_autonomous(v_proc_name, 'I', v_step, NULL, NULL, 
                     'Exchanged partition to staging', 'Partition: ' || v_partition_name, USER);
                 
-                -- Step 1a: Rebuild unusable indexes on source partition after exchange
+                -- Step 1a: Rebuild ALL indexes on source partition after exchange (unconditional)
                 v_step := 100 + (i * 100) + 5.1;
                 FOR idx IN (
                     SELECT i.index_name, ip.partition_name
@@ -810,13 +810,12 @@ BEGIN
                     JOIN user_indexes i ON ip.index_name = i.index_name
                     WHERE i.table_name = UPPER(p_table_name)
                       AND ip.partition_name = v_partition_name
-                      AND ip.status = 'UNUSABLE'
                 ) LOOP
                     BEGIN
                         EXECUTE IMMEDIATE 'ALTER INDEX ' || idx.index_name || 
                                         ' REBUILD PARTITION ' || idx.partition_name;
                         prc_log_error_autonomous(v_proc_name, 'I', v_step, NULL, NULL, 
-                            'Rebuilt unusable source index partition', 
+                            'Rebuilt source index partition', 
                             idx.index_name || '.' || idx.partition_name, USER);
                     EXCEPTION
                         WHEN OTHERS THEN
@@ -877,7 +876,7 @@ BEGIN
                 
                 DBMS_OUTPUT.PUT_LINE('Step 2: Data moved to archive (instant)');
                 
-                -- Step 2a: Rebuild unusable indexes on archive partition after exchange
+                -- Step 2a: Rebuild ALL indexes on archive partition after exchange (unconditional)
                 v_step := 100 + (i * 100) + 7.1;
                 FOR idx IN (
                     SELECT i.index_name, ip.partition_name
@@ -885,13 +884,12 @@ BEGIN
                     JOIN user_indexes i ON ip.index_name = i.index_name
                     WHERE i.table_name = UPPER(v_archive_table_name)
                       AND ip.partition_name = v_archive_partition_name
-                      AND ip.status = 'UNUSABLE'
                 ) LOOP
                     BEGIN
                         EXECUTE IMMEDIATE 'ALTER INDEX ' || idx.index_name || 
                                         ' REBUILD PARTITION ' || idx.partition_name;
                         prc_log_error_autonomous(v_proc_name, 'I', v_step, NULL, NULL, 
-                            'Rebuilt unusable archive index partition', 
+                            'Rebuilt archive index partition', 
                             idx.index_name || '.' || idx.partition_name, USER);
                     EXCEPTION
                         WHEN OTHERS THEN
