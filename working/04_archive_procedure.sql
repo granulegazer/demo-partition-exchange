@@ -738,41 +738,54 @@ BEGIN
                 
                 -- Get source table record count
                 EXECUTE IMMEDIATE 'SELECT COUNT(*) FROM ' || p_table_name INTO v_source_records_before;
+                prc_log_error_autonomous(v_proc_name, 'I', v_step, NULL, NULL, 
+                    'Source table count before', 'Records: ' || v_source_records_before, USER);
                 
                 -- Get archive table record count
+                v_step := 100 + (i * 100) + 4.1;
                 EXECUTE IMMEDIATE 'SELECT COUNT(*) FROM ' || v_archive_table_name INTO v_archive_records_before;
+                prc_log_error_autonomous(v_proc_name, 'I', v_step, NULL, NULL, 
+                    'Archive table count before', 'Records: ' || v_archive_records_before, USER);
                 
                 -- Get source index information
+                v_step := 100 + (i * 100) + 4.2;
                 SELECT COUNT(*), NVL(SUM(ROUND(bytes/1024/1024, 2)), 0)
                 INTO v_source_index_count, v_source_index_size_mb
                 FROM user_segments
                 WHERE segment_name IN (
                     SELECT index_name FROM user_indexes WHERE table_name = UPPER(p_table_name)
                 );
+                prc_log_error_autonomous(v_proc_name, 'I', v_step, NULL, NULL, 
+                    'Source index metrics', 
+                    'Count: ' || v_source_index_count || ', Size: ' || v_source_index_size_mb || ' MB', USER);
                 
                 -- Get archive index information
+                v_step := 100 + (i * 100) + 4.3;
                 SELECT COUNT(*), NVL(SUM(ROUND(bytes/1024/1024, 2)), 0)
                 INTO v_archive_index_count, v_archive_index_size_mb
                 FROM user_segments
                 WHERE segment_name IN (
                     SELECT index_name FROM user_indexes WHERE table_name = UPPER(v_archive_table_name)
                 );
+                prc_log_error_autonomous(v_proc_name, 'I', v_step, NULL, NULL, 
+                    'Archive index metrics', 
+                    'Count: ' || v_archive_index_count || ', Size: ' || v_archive_index_size_mb || ' MB', USER);
                 
                 -- Count invalid indexes before
+                v_step := 100 + (i * 100) + 4.4;
                 SELECT COUNT(*)
                 INTO v_invalid_indexes_before
                 FROM user_indexes
                 WHERE table_name IN (UPPER(p_table_name), UPPER(v_archive_table_name))
                   AND status != 'VALID';
-                
                 prc_log_error_autonomous(v_proc_name, 'I', v_step, NULL, NULL, 
-                    'Before metrics collected', 
-                    'Src Recs: ' || v_source_records_before || ', Arc Recs: ' || v_archive_records_before || 
-                    ', Src Idx: ' || v_source_index_count || ', Invalid Idx: ' || v_invalid_indexes_before, 
-                    USER);
+                    'Invalid indexes before', 'Count: ' || v_invalid_indexes_before, USER);
                 
                 -- Ensure staging table is empty before exchange
+                v_step := 100 + (i * 100) + 4.5;
                 EXECUTE IMMEDIATE 'TRUNCATE TABLE ' || v_staging_table;
+                prc_log_error_autonomous(v_proc_name, 'I', v_step, NULL, NULL, 
+                    'Staging table truncated', v_staging_table, USER);
                 
                 -- Step 1: Exchange partition from main to staging (instant)
                 -- Note: NOT using INCLUDING INDEXES because staging has regular indexes
@@ -789,34 +802,67 @@ BEGIN
                 prc_log_error_autonomous(v_proc_name, 'I', v_step, NULL, NULL, 
                     'Exchanged partition to staging', 'Partition: ' || v_partition_name, USER);
                 
+                -- Step 1a: Rebuild unusable indexes on source partition after exchange
+                v_step := 100 + (i * 100) + 5.1;
+                FOR idx IN (
+                    SELECT i.index_name, ip.partition_name
+                    FROM user_ind_partitions ip
+                    JOIN user_indexes i ON ip.index_name = i.index_name
+                    WHERE i.table_name = UPPER(p_table_name)
+                      AND ip.partition_name = v_partition_name
+                      AND ip.status = 'UNUSABLE'
+                ) LOOP
+                    BEGIN
+                        EXECUTE IMMEDIATE 'ALTER INDEX ' || idx.index_name || 
+                                        ' REBUILD PARTITION ' || idx.partition_name;
+                        prc_log_error_autonomous(v_proc_name, 'I', v_step, NULL, NULL, 
+                            'Rebuilt unusable source index partition', 
+                            idx.index_name || '.' || idx.partition_name, USER);
+                    EXCEPTION
+                        WHEN OTHERS THEN
+                            prc_log_error_autonomous(v_proc_name, 'E', v_step, SQLCODE, SQLERRM, 
+                                'Error rebuilding source index partition', 
+                                idx.index_name || '.' || idx.partition_name, USER);
+                    END;
+                END LOOP;
+                
                 DBMS_OUTPUT.PUT_LINE('Step 1: Partition moved to staging table (instant)');
                 
-                -- Step 2: Exchange staging with archive partition (instant)
+                -- Step 2: Check/create archive partition
                 v_step := 100 + (i * 100) + 6;
                 IF v_archive_partition_name IS NULL THEN
                     prc_log_error_autonomous(v_proc_name, 'I', v_step, NULL, NULL, 
-                        'Archive partition not found, creating', 'Date: ' || TO_CHAR(p_dates(i), 'YYYY-MM-DD'), USER);
+                        'Archive partition not found, will create', 'Date: ' || TO_CHAR(p_dates(i), 'YYYY-MM-DD'), USER);
                     
-                    -- Need to insert one row to create partition, then exchange
+                    -- Insert test row to trigger partition creation
+                    v_step := 100 + (i * 100) + 6.1;
                     v_sql := 'INSERT INTO ' || v_archive_table_name || ' ' ||
                              'SELECT * FROM ' || v_staging_table || ' WHERE ROWNUM = 1';
                     EXECUTE IMMEDIATE v_sql;
                     COMMIT;
+                    prc_log_error_autonomous(v_proc_name, 'I', v_step, NULL, NULL, 
+                        'Inserted test row to create partition', NULL, USER);
                     
                     -- Get the newly created partition name
+                    v_step := 100 + (i * 100) + 6.2;
                     v_archive_partition_name := get_partition_name_by_date(
                         v_archive_table_name, 
                         p_dates(i)
                     );
-                    
                     prc_log_error_autonomous(v_proc_name, 'I', v_step, NULL, NULL, 
-                        'Created archive partition', v_archive_partition_name, USER);
+                        'Retrieved new archive partition name', v_archive_partition_name, USER);
                     
                     -- Delete the test row
+                    v_step := 100 + (i * 100) + 6.3;
                     v_sql := 'DELETE FROM ' || v_archive_table_name || ' ' ||
                              'PARTITION (' || v_archive_partition_name || ')';
                     EXECUTE IMMEDIATE v_sql;
                     COMMIT;
+                    prc_log_error_autonomous(v_proc_name, 'I', v_step, NULL, NULL, 
+                        'Deleted test row from archive partition', v_archive_partition_name, USER);
+                ELSE
+                    prc_log_error_autonomous(v_proc_name, 'I', v_step, NULL, NULL, 
+                        'Archive partition exists', v_archive_partition_name, USER);
                 END IF;
                 
                 v_step := 100 + (i * 100) + 7;
@@ -826,7 +872,13 @@ BEGIN
                          ' WITHOUT VALIDATION';
                 EXECUTE IMMEDIATE v_sql;
                 
-                -- Rebuild unusable indexes on archive partition immediately after exchange
+                prc_log_error_autonomous(v_proc_name, 'I', v_step, NULL, NULL, 
+                    'Exchanged staging to archive', 'Partition: ' || v_archive_partition_name, USER);
+                
+                DBMS_OUTPUT.PUT_LINE('Step 2: Data moved to archive (instant)');
+                
+                -- Step 2a: Rebuild unusable indexes on archive partition after exchange
+                v_step := 100 + (i * 100) + 7.1;
                 FOR idx IN (
                     SELECT i.index_name, ip.partition_name
                     FROM user_ind_partitions ip
@@ -839,16 +891,17 @@ BEGIN
                         EXECUTE IMMEDIATE 'ALTER INDEX ' || idx.index_name || 
                                         ' REBUILD PARTITION ' || idx.partition_name;
                         prc_log_error_autonomous(v_proc_name, 'I', v_step, NULL, NULL, 
-                            'Rebuilt unusable index partition', 
+                            'Rebuilt unusable archive index partition', 
                             idx.index_name || '.' || idx.partition_name, USER);
                     EXCEPTION
                         WHEN OTHERS THEN
                             prc_log_error_autonomous(v_proc_name, 'E', v_step, SQLCODE, SQLERRM, 
-                                'Error rebuilding index partition', 
+                                'Error rebuilding archive index partition', 
                                 idx.index_name || '.' || idx.partition_name, USER);
                     END;
                 END LOOP;
                 
+                -- Step 3: Log completion and collect metrics
                 v_step := 100 + (i * 100) + 8;
                 v_exchange_end := SYSTIMESTAMP;
                 v_exchange_duration := EXTRACT(SECOND FROM (v_exchange_end - v_exchange_start)) +
@@ -896,22 +949,31 @@ BEGIN
                 
                 -- Get source table record count after exchange
                 EXECUTE IMMEDIATE 'SELECT COUNT(*) FROM ' || p_table_name INTO v_source_records_after;
+                prc_log_error_autonomous(v_proc_name, 'I', v_step, NULL, NULL, 
+                    'Source table count after', 'Records: ' || v_source_records_after, USER);
                 
                 -- Get archive table record count after exchange
+                v_step := 100 + (i * 100) + 9.1;
                 EXECUTE IMMEDIATE 'SELECT COUNT(*) FROM ' || v_archive_table_name INTO v_archive_records_after;
+                prc_log_error_autonomous(v_proc_name, 'I', v_step, NULL, NULL, 
+                    'Archive table count after', 'Records: ' || v_archive_records_after, USER);
                 
                 -- Count invalid indexes after
+                v_step := 100 + (i * 100) + 9.2;
                 SELECT COUNT(*)
                 INTO v_invalid_indexes_after
                 FROM user_indexes
                 WHERE table_name IN (UPPER(p_table_name), UPPER(v_archive_table_name))
                   AND status != 'VALID';
+                prc_log_error_autonomous(v_proc_name, 'I', v_step, NULL, NULL, 
+                    'Invalid indexes after', 'Count: ' || v_invalid_indexes_after, USER);
                 
                 -- Validate data integrity
+                v_step := 100 + (i * 100) + 9.3;
                 v_data_validation_status := 'PASS';
                 v_record_count_match := 'Y';
                 
-                -- Check if records moved correctly
+                -- Check if records moved correctly from source
                 IF v_source_records_before - v_source_records_after != v_count THEN
                     v_data_validation_status := 'FAIL';
                     v_record_count_match := 'N';
@@ -921,6 +983,8 @@ BEGIN
                         USER);
                 END IF;
                 
+                -- Check if records moved correctly to archive
+                v_step := 100 + (i * 100) + 9.4;
                 IF v_archive_records_after - v_archive_records_before != v_count THEN
                     v_data_validation_status := 'FAIL';
                     v_record_count_match := 'N';
@@ -931,9 +995,8 @@ BEGIN
                 END IF;
                 
                 prc_log_error_autonomous(v_proc_name, 'I', v_step, NULL, NULL, 
-                    'After metrics collected', 
-                    'Src Recs: ' || v_source_records_after || ', Arc Recs: ' || v_archive_records_after || 
-                    ', Invalid Idx: ' || v_invalid_indexes_after || ', Data Val: ' || v_data_validation_status, 
+                    'Data validation completed', 
+                    'Status: ' || v_data_validation_status || ', Match: ' || v_record_count_match, 
                     USER);
                 
                 DBMS_OUTPUT.PUT_LINE('Data Validation: ' || v_data_validation_status);
