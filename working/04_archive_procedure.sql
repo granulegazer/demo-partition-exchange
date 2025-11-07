@@ -1081,17 +1081,12 @@ BEGIN
                 v_partitions_archived := v_partitions_archived + 1;
                 COMMIT;
             ELSE
-                -- Handle empty partition - just drop it without archiving
-                v_step := 100 + (i * 100) + 10;
-                v_sql := 'ALTER TABLE ' || p_table_name || ' DROP PARTITION ' || v_partition_name;
-                EXECUTE IMMEDIATE v_sql;
-                
+                -- Handle empty partition - skip without archiving or dropping
                 prc_log_error_autonomous(v_proc_name, 'I', v_step, NULL, NULL, 
-                    'Dropped empty source partition', v_partition_name || ' (0 records)', USER);
+                    'Skipped empty source partition', v_partition_name || ' (0 records)', USER);
                 
-                DBMS_OUTPUT.PUT_LINE('Dropped empty partition: ' || v_partition_name);
+                DBMS_OUTPUT.PUT_LINE('Skipped empty partition: ' || v_partition_name || ' (no exchange needed)');
                 DBMS_OUTPUT.PUT_LINE('-------------------------------------------');
-                COMMIT;
             END IF;
             
         EXCEPTION
@@ -1110,36 +1105,36 @@ BEGIN
     
     -- Validate indexes after exchange if configured
     IF v_validate_before = 'Y' THEN
-        -- Check source table indexes
+        -- Check source table indexes (both INVALID and UNUSABLE)
         SELECT COUNT(*)
         INTO v_invalid_indexes
         FROM user_indexes
         WHERE table_name = UPPER(p_table_name)
-          AND status != 'VALID';
+          AND (status != 'VALID' OR status = 'UNUSABLE');
           
         IF v_invalid_indexes > 0 THEN
             prc_log_error_autonomous(v_proc_name, 'E', v_step, NULL, NULL, 
-                'Invalid indexes after exchange on source', 
+                'Invalid/unusable indexes after exchange on source', 
                 'Table: ' || p_table_name || ', Count: ' || v_invalid_indexes, USER);
-            DBMS_OUTPUT.PUT_LINE('WARNING: ' || v_invalid_indexes || ' invalid indexes on ' || p_table_name);
+            DBMS_OUTPUT.PUT_LINE('WARNING: ' || v_invalid_indexes || ' invalid/unusable indexes on ' || p_table_name);
         ELSE
             prc_log_error_autonomous(v_proc_name, 'I', v_step, NULL, NULL, 
                 'All indexes valid after exchange on source', 'Table: ' || p_table_name, USER);
             DBMS_OUTPUT.PUT_LINE('All indexes valid on ' || p_table_name);
         END IF;
         
-        -- Check archive table indexes
+        -- Check archive table indexes (both INVALID and UNUSABLE)
         SELECT COUNT(*)
         INTO v_invalid_indexes
         FROM user_indexes
         WHERE table_name = UPPER(v_archive_table_name)
-          AND status != 'VALID';
+          AND (status != 'VALID' OR status = 'UNUSABLE');
           
         IF v_invalid_indexes > 0 THEN
             prc_log_error_autonomous(v_proc_name, 'E', v_step, NULL, NULL, 
-                'Invalid indexes after exchange on archive', 
+                'Invalid/unusable indexes after exchange on archive', 
                 'Table: ' || v_archive_table_name || ', Count: ' || v_invalid_indexes, USER);
-            DBMS_OUTPUT.PUT_LINE('WARNING: ' || v_invalid_indexes || ' invalid indexes on ' || v_archive_table_name);
+            DBMS_OUTPUT.PUT_LINE('WARNING: ' || v_invalid_indexes || ' invalid/unusable indexes on ' || v_archive_table_name);
         ELSE
             prc_log_error_autonomous(v_proc_name, 'I', v_step, NULL, NULL, 
                 'All indexes valid after exchange on archive', 'Table: ' || v_archive_table_name, USER);
