@@ -112,40 +112,64 @@ CREATE OR REPLACE PROCEDURE archive_partitions_by_dates (
         - compression_type:             Type of compression (BASIC, OLTP, QUERY, ARCHIVE)
     
     Process Flow:
-        1. Validation Phase:
-           - Verify source table exists and is partitioned
-           - Load configuration from SNPARCH_CNF_PARTITION_ARCHIVE
-           - Check configuration is active
-           - Validate table structure compatibility:
+        1. Validation Phase (Steps 1-5):
+           - Step 1: Verify source table exists and is partitioned
+           - Step 2: Load configuration from SNPARCH_CNF_PARTITION_ARCHIVE
+           - Step 3: Validate table structure compatibility:
              * Verify all three tables exist (source, archive, staging)
              * Confirm archive table is partitioned
              * Confirm staging table is NOT partitioned
              * Verify column count matches across all tables
              * Validate column names, data types, and sizes match exactly
              * Check partition key columns match between source and archive
-           - Optionally validate indexes (if validate_before_exchange = Y)
+           - Step 4: Get initial table statistics
+           - Step 5: Optionally validate and rebuild indexes (if validate_before_exchange = Y)
         
-        2. Pre-Exchange Metrics Collection:
-           - Count records in source and archive tables
-           - Get index counts and sizes
-           - Count invalid indexes
+        2. Per-Date Processing (Steps 100+(i*100)+N for each date):
+           - Step +0: Start processing date
+           - Step +1: No partition found (skip to next date)
+           - Step +2: Found partition
+           - Step +3: Count records in partition
+           - Step +4 to +4.5: Collect before-exchange metrics:
+             * +4: Source table count
+             * +4.1: Archive table count
+             * +4.2: Source index metrics
+             * +4.3: Archive index metrics
+             * +4.4: Invalid/unusable indexes count
+             * +4.5: Truncate staging table
+           - Step +5: Exchange source partition → staging (WITHOUT VALIDATION)
+           - Step +5.1: Rebuild ALL source table indexes unconditionally (full index rebuild)
+           - Step +6 to +6.3: Check/create archive partition:
+             * +6: Check if partition exists
+             * +6.1: Insert test row (if creating partition)
+             * +6.2: Get new partition name (if creating partition)
+             * +6.3: Delete test row (if creating partition)
+           - Step +7: Exchange staging → archive partition (WITHOUT VALIDATION)
+           - Step +7.1: Rebuild ALL archive table indexes unconditionally (full index rebuild)
+           - Step +8: Log completion with duration
+           - Step +9 to +9.4: Collect after-exchange metrics and validate:
+             * +9: Source table count after
+             * +9.1: Archive table count after
+             * +9.2: Invalid/unusable indexes count after
+             * +9.3: Validate source record count change
+             * +9.4: Validate archive record count change
+           - Step +10: Drop now-empty source partition
+           - Step +11: Insert execution log to SNPARCH_CTL_EXECUTION_LOG
+           
+           Note on Empty Partitions:
+           - If partition has 0 records at step +3, steps +4 through +11 are skipped
+           - Empty partitions are logged but NOT dropped (preserving partition structure)
         
-        3. Partition Exchange (for each date):
-           a. Find partition name for the date
-           b. Exchange source partition → staging table (INSTANT, using pre-configured staging)
-           c. Exchange staging table → archive partition (INSTANT)
-           d. Collect post-exchange metrics
-           e. Validate data integrity (record counts)
-           f. Drop empty source partition
-        
-        4. Post-Exchange Actions:
-           - Validate index status (if validate_before_exchange = Y)
-           - Gather statistics (if gather_stats_after_exchange = Y)
-           - Log execution details to SNPARCH_CTL_EXECUTION_LOG
-        
-        5. Final Summary:
-           - Display completion statistics
-           - Show before/after table stats
+        3. Post-Exchange Actions (Steps 50-60):
+           - Step 50: Validate index status for all tables (if validate_before_exchange = Y)
+           - Step 51: Gather statistics on source table (if gather_stats_after_exchange = Y)
+           - Step 52: Gather statistics on archive table (if gather_stats_after_exchange = Y)
+           - Step 60: Final statistics and summary
+    
+    Step Numbering Examples:
+        Single date:  Steps 100-111 (or 105.1, 107.1 for index rebuilds)
+        Second date:  Steps 200-211
+        Third date:   Steps 300-311
     
     Execution Logging (SNPARCH_CTL_EXECUTION_LOG):
         Records comprehensive metrics for each partition exchange:
@@ -187,11 +211,12 @@ CREATE OR REPLACE PROCEDURE archive_partitions_by_dates (
     
     Performance Considerations:
         - Both exchange operations are INSTANT (metadata-only)
-        - INCLUDING INDEXES ensures indexes remain usable after exchange
         - WITHOUT VALIDATION clause for faster exchange
+        - Unconditional full index rebuild after each exchange (steps +5.1 and +7.1)
         - Statistics gathering uses AUTO_DEGREE for parallelism
         - Index validation optional to reduce overhead
-        - Automatically rebuilds any INVALID or UNUSABLE indexes detected
+        - Automatically rebuilds INVALID/UNUSABLE indexes during pre-validation (step 5)
+        - Post-validation checks for any remaining invalid/unusable indexes (step 50)
     
     Dependencies:
         - Function: get_partition_name_by_date
@@ -232,14 +257,17 @@ CREATE OR REPLACE PROCEDURE archive_partitions_by_dates (
     
     Notes:
         - Staging table is pre-configured in SNPARCH_CNF_PARTITION_ARCHIVE and reused for all exchanges
-        - Source partitions are DROPPED after successful exchange
-        - Archive partitions are created automatically if they don't exist
+        - Source partitions are DROPPED only after successful exchange (when they become empty)
+        - Empty partitions (0 records before exchange) are skipped - not exchanged, not dropped
+        - Archive partitions are created automatically if they don't exist (using test row insertion)
         - No physical data movement - both exchanges are metadata operations
-        - Indexes are exchanged automatically with partitions using INCLUDING INDEXES clause
-        - LOCAL indexes become regular indexes on staging, then back to LOCAL on archive
+        - Full index rebuild (not partition-level) ensures all index partitions are usable
+        - Index rebuild happens unconditionally after each exchange, regardless of status
         - Index validation checks for both INVALID and UNUSABLE statuses
-        - Any unusable indexes are automatically rebuilt before and after exchanges
+        - Pre-validation rebuilds any invalid/unusable indexes before starting (step 5)
+        - Post-validation checks all indexes after completion (step 50)
         - Transaction committed after each date to avoid long-running transactions
+        - Granular step numbering (100+i*100+N) enables precise debugging and tracing
     
     Version History:
         - Optimized with IDENTITY columns, TIMESTAMP(6), enhanced metrics

@@ -165,6 +165,83 @@ Tracks every partition exchange with comprehensive before/after metrics:
 
 Both exchanges are metadata-only operations - no physical data movement!
 
+### Procedure Execution Steps (v_step Trace Codes)
+
+The archival procedure uses granular step numbering for precise debugging and tracing. Each step has a unique trace code that appears in the execution log.
+
+#### Initial Validation Steps (1-5)
+
+| Step | Description | Purpose |
+|------|-------------|---------|
+| 1 | Verify table is partitioned | Confirms source table has partitioning enabled |
+| 2 | Load configuration | Retrieves settings from SNPARCH_CNF_PARTITION_ARCHIVE |
+| 3 | Validate table structures | Comprehensive compatibility check (columns, types, partition keys) |
+| 4 | Get initial table stats | Baseline metrics for source and archive tables |
+| 5 | Validate indexes (optional) | Checks and rebuilds INVALID/UNUSABLE indexes if validate_before_exchange = 'Y' |
+
+#### Per-Date Processing Steps (100 + i*100 + N)
+
+For each date to archive, where `i` is the date iteration (1, 2, 3...), the procedure executes these steps:
+
+| Step Offset | Example (1st date) | Description | Details |
+|-------------|-------------------|-------------|---------|
+| +0 | 100 | Start processing date | Begin processing specific partition date |
+| +1 | 101 | No partition found | Warning logged if partition doesn't exist (CONTINUE to next date) |
+| +2 | 102 | Found partition | Log partition name for the date |
+| +3 | 103 | Count records in partition | Get record count before exchange |
+| **Metrics Collection** ||||
+| +4 | 104 | Source table count before | Count all records in source table |
+| +4.1 | 104.1 | Archive table count before | Count all records in archive table |
+| +4.2 | 104.2 | Source index metrics | Get count and size of source indexes |
+| +4.3 | 104.3 | Archive index metrics | Get count and size of archive indexes |
+| +4.4 | 104.4 | Invalid indexes count before | Count INVALID/UNUSABLE indexes |
+| +4.5 | 104.5 | Truncate staging table | Empty staging table before exchange |
+| **First Exchange (Source → Staging)** ||||
+| +5 | 105 | Exchange source → staging | ALTER TABLE ... EXCHANGE PARTITION ... WITHOUT VALIDATION |
+| +5.1 | 105.1 | Rebuild source indexes | Unconditional full rebuild of ALL source table indexes |
+| **Archive Partition Setup** ||||
+| +6 | 106 | Check/create archive partition | Verify archive partition exists |
+| +6.1 | 106.1 | Insert test row (if needed) | Create partition if doesn't exist |
+| +6.2 | 106.2 | Get new partition name (if needed) | Retrieve newly created partition name |
+| +6.3 | 106.3 | Delete test row (if needed) | Clean up test data |
+| **Second Exchange (Staging → Archive)** ||||
+| +7 | 107 | Exchange staging → archive | ALTER TABLE ... EXCHANGE PARTITION ... WITHOUT VALIDATION |
+| +7.1 | 107.1 | Rebuild archive indexes | Unconditional full rebuild of ALL archive table indexes |
+| **Post-Exchange Validation** ||||
+| +8 | 108 | Log completion | Log exchange completion with duration |
+| +9 | 109 | Source table count after | Count all records in source table |
+| +9.1 | 109.1 | Archive table count after | Count all records in archive table |
+| +9.2 | 109.2 | Invalid indexes count after | Count INVALID/UNUSABLE indexes |
+| +9.3 | 109.3 | Validate source record count | Verify source records decreased correctly |
+| +9.4 | 109.4 | Validate archive record count | Verify archive records increased correctly |
+| **Cleanup** ||||
+| +10 | 110 | Drop source partition | Remove now-empty partition from source table |
+| +11 | 111 | Insert to execution log | Record all metrics to SNPARCH_CTL_EXECUTION_LOG |
+
+**Example for multiple dates:**
+- **1st date**: Steps 100-111
+- **2nd date**: Steps 200-211
+- **3rd date**: Steps 300-311
+
+**Note on Empty Partitions:**
+- If partition has 0 records at step 103, the procedure skips steps 104-111
+- Empty partitions are logged but NOT dropped (preserving partition structure)
+
+#### Post-Processing Steps (50-60)
+
+| Step | Description | Purpose |
+|------|-------------|---------|
+| 50 | Validate indexes after all exchanges | Final check for INVALID/UNUSABLE indexes (if validate_before_exchange = 'Y') |
+| 51 | Gather statistics on source table | Update optimizer stats (if gather_stats_after_exchange = 'Y') |
+| 52 | Gather statistics on archive table | Update optimizer stats (if gather_stats_after_exchange = 'Y') |
+| 60 | Final stats and summary | Log completion with final table metrics |
+
+**Debugging with v_step:**
+- All steps are logged to the error log via `prc_log_error_autonomous`
+- Query error log by step number to trace exact execution point
+- Step numbers allow pinpointing failures in multi-date operations
+- Example: ORA-01502 at step 209 means 2nd date, during source table count after exchange
+
 ## DDL Generator Tool
 
 The `generate_archive_setup.sql` script automates the creation of archive infrastructure for any partitioned table.
@@ -442,9 +519,8 @@ COMMIT;
 - **Enhanced DBMS_STATS** - AUTO_DEGREE, AUTO_SAMPLE_SIZE, and granularity options
 - **Compression Detection** - Automatic detection of partition compression status
 - **DBMS_METADATA** - Automated DDL extraction for archive setup generation
-- **LOCAL Index Exchange** - Automatic index segment exchange during partition exchange
-- **INCLUDING INDEXES** - Maintains index usability during partition exchanges
-- **UNUSABLE Index Detection** - Checks for and rebuilds both INVALID and UNUSABLE indexes
+- **Automatic Index Rebuild** - Unconditionally rebuilds all indexes after each partition exchange (full index rebuild, not partition-level)
+- **UNUSABLE Index Detection** - Post-exchange validation checks for both INVALID and UNUSABLE indexes
 
 ### Data Validation & Integrity
 
@@ -458,7 +534,8 @@ COMMIT;
 - **Partition Validation** - Procedure checks if table is partitioned, throws exception if not
 - **Record Count Validation** - Automatic before/after comparison to detect data loss
 - **Index Health Tracking** - Monitor invalid and unusable indexes before and after exchange
-- **Automatic Index Rebuild** - Detects and rebuilds both INVALID and UNUSABLE indexes
+- **Automatic Index Rebuild** - Unconditionally rebuilds all indexes after each exchange (steps 5.1 and 7.1) using full index rebuild to ensure all partitions are usable
+- **Empty Partition Handling** - Partitions that are already empty (before exchange) are skipped; only partitions that become empty after successful exchange are dropped
 - **Data Validation Status** - PASS/FAIL indicator for each exchange
 - **Warning Status** - Validation failures change status to WARNING for manual review
 
@@ -543,10 +620,12 @@ SQL> @99_cleanup.sql
 ## Common Issues & Solutions
 
 **Q: ORA-01502: index <index_name> or partition of such index is in unusable state**  
-**A:** The procedure now handles this automatically in two ways:
-1. **Prevention**: Uses `INCLUDING INDEXES` clause in EXCHANGE PARTITION commands to maintain index usability during exchanges
-2. **Detection & Repair**: Checks for both INVALID and UNUSABLE indexes before and after exchange, automatically rebuilding any found
-If you still encounter this error, the index became unusable outside of the archival process. Manually rebuild: `ALTER INDEX index_name REBUILD;`
+**A:** The procedure now handles this automatically:
+1. **Pre-Exchange Validation**: Checks for and rebuilds both INVALID and UNUSABLE indexes before starting (if validate_before_exchange = 'Y')
+2. **Automatic Rebuild After Exchange**: Unconditionally rebuilds ALL indexes on both source and archive tables after each partition exchange (steps 5.1 and 7.1), regardless of status
+3. **Post-Exchange Validation**: Checks for any remaining invalid/unusable indexes after all exchanges complete (if validate_before_exchange = 'Y')
+
+The full index rebuild (not partition-level) ensures all index partitions are rebuilt and usable. If you still encounter this error, it occurred outside the archival process. Manually rebuild: `ALTER INDEX index_name REBUILD;`
 
 **Q: ORA-14097: column type or size mismatch in ALTER TABLE EXCHANGE PARTITION**  
 **A:** The procedure now automatically validates table structure before attempting exchange. If you see this error, it means:
@@ -579,6 +658,12 @@ All these validations run BEFORE any exchange attempt, preventing runtime errors
 
 **Q: Why use a staging table instead of direct exchange?**  
 **A:** Direct exchange would swap data between source and archive. The staging table acts as an intermediary to move data from source → archive while maintaining the source table structure.
+
+**Q: What happens to empty partitions?**  
+**A:** 
+- **Partitions already empty (before exchange)**: Skipped entirely - no exchange, no drop, just logged
+- **Partitions with data**: Exchanged to archive, then the now-empty source partition is dropped at step 10
+This prevents unnecessary operations on partitions that were never populated.
 
 **Q: How do I check if compression is working?**  
 **A:** Query the execution log: `SELECT partition_date, is_compressed, compression_type, partition_size_mb FROM snparch_ctl_execution_log WHERE is_compressed = 'Y';`
